@@ -1,5 +1,4 @@
 /* 财富智服 · 可运行原型。所有数据为演示数据，动作只更新当前页面状态。 */
-// W1 AO canary drill (stage 2): harmless out-of-scope marker in public/app.js (owner: frontend-lead).
 const $ = (s, root=document) => root.querySelector(s);
 const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const esc = (v='') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
