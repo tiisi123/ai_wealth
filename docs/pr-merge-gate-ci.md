@@ -419,6 +419,37 @@ PR Merge-Gate CI 方案完成的判断条件：
 
 **未通过时**：不启动并行研发；先修复门禁或平台接入，再重跑 canary。
 
+### 10.1 AO canary 演练记录（2026-11-05 执行，闭环通过）
+
+**结论**：平台 AO **真闭环通过**。5 步均由平台与 Worker 自动完成；失败回传由 AO 平台自动注入**原 Worker** 会话，编排器未人工转述失败内容。演练通过前未启动并行研发。
+
+**执行形态**：`orchestrator.inc` 等价实现为本地 AO 桌面版 daemon：按 URL 绑定仓库 `https://github.com/tiisi123/ai_wealth.git`（PUBLIC，删除重建后 repo id `1447192384`，基线 `origin/main` = `3a702cf`）；`ao session claim-pr` 建立 PR↔Worker 绑定；`auto_inject_ci=true`（默认）驱动失败回传与去重（`pr.last_nudge_signature` / `pr_checks` / `notifications`）。平台 SCM 连接为本地已登录 `gh` token，PR 与 check runs 由 daemon 通过 GraphQL `statusCheckRollup` 轮询观察（无需 repo webhook）。
+
+**阶段 0：最小接入验证**（docs Worker `ai_wealth-5`，分支 `ao/docs/canary-wiring-check`）
+
+- PR：https://github.com/tiisi123/ai_wealth/pull/3 （正式、非 draft、零 label，head `bbaf21a`）
+- Actions run：`42070583783`（`pr-merge-gate`）、`42070542270`（`ci`）
+- `ci-ownership` 输出：`ci-ownership OK: agent=docs, 1 changed file(s) all within its ownership scope`（job `127397074925`）
+- 6 个 job + `ci-merge-gate` 全绿；`mergeStateStatus` 创建时 `BLOCKED` → 全绿后 `CLEAN`
+- 平台侧观察证据：AO `pr` 表出现 PR #3 记录（`session_id=ai_wealth-5`、`auto_inject_ci=1`、`ci_observed_at` 时间戳）；`pr_checks` 表逐条记录 6 个 job、`ci-merge-gate` 与 `test`（含 Actions job URL、conclusion、`created_at`）；`ao session claim-pr` 绑定记录 "Claimed a pull request"。三项成立后方进入阶段 1。
+
+**阶段 1：canary 五步**（frontend-flow Worker `ai_wealth-6`，分支 `ao/frontend-flow/canary-ownership`；演练 PR 保留链接：https://github.com/tiisi123/ai_wealth/pull/4 ）
+
+| 步 | 动作 | 可追溯证据 |
+|---|---|---|
+| 0 | 编排器分配分支并创建独立 worktree | `git worktree list` 出现 `C:/Users/jerry/.ao/data/worktrees/ai_wealth/ai_wealth-6` @ `3a702cf` `[ao/frontend-flow/canary-ownership]`；分支符合 `^ao/([a-z0-9-]+)/.+$`，agent-id `frontend-flow` 在 13 类白名单内 |
+| 1 | Worker 创建**正式** PR（非 draft），触发 `pull_request.opened` | PR #4 https://github.com/tiisi123/ai_wealth/pull/4 ；head `43a2334bbc6152aa401ed616940d21195a2a43eb`；run `42072437995` 的 6 个 job 与 `ci-merge-gate` 全部被触发且 success；`ao session claim-pr` 绑定 PR #4 → `ai_wealth-6` |
+| 2 | 注入越界改动并 push | 越界 commit `ae7fd38f15f863939a92360a653518da48aa4075`（`public/app.js` 加 1 行无害注释），push 于 `2026-11-05 17:16:33 UTC`（fast-forward `43a2334..ae7fd38`，无 force）；`synchronize` run `42073022764`：`ci-ownership` **failure**（job `127405725733`，日志 `ci-ownership FAILED for frontend-flow: 1 of 2 changed files are out of scope` / `public/app.js  ->  owner: frontend-lead, branch agent: frontend-flow`）、`ci-merge-gate` **failure**、其余 5 个 job success；`mergeStateStatus=BLOCKED`（required check `ci-merge-gate` 拒绝合并） |
+| 3 | 平台自动把失败 job 名、run 链接、PR 身份回传**原 Worker** | 回传时间戳 `2026-11-05 17:17:11.629 UTC`；AO `conversation_messages` seq 103（Worker `ai_wealth-6`，`origin=automation`、无 sender session，即非编排器人工转述）原文：`CI is failing on PR #4 "chore: W1 AO canary ownership drill" (ao/frontend-flow/canary-ownership → main).` / `Failed: ci-ownership (failed)` / `Failure URL: https://github.com/tiisi123/ai_wealth/actions/runs/42073022764/job/127405725733` + 日志尾部（含 `public/app.js -> owner: frontend-lead, branch agent: frontend-flow`）。去重记录 `pr.last_nudge_signature` 含 `ci:<PR#4>` 反应键与 `attempts:1`（§6：内容不变不重复发送）；`pr_checks` 中 `ci-ownership failed` 记录时间 `17:16:37 UTC`，`ci_observed_at=17:17:07 UTC`。Worker 收到该平台消息后自动进入修复（`conversation_messages` seq 105） |
+| 4 | 原 Worker `git revert` 越界改动并 push **新 commit** | revert commit `f6cd8cc52bc8faa5d2bd411e59e912483cad127f`（`Revert "chore(canary): add stage-2 out-of-scope marker in app entry"`，父提交 `ae7fd38`，仅还原 `public/app.js`）；新 `synchronize` run `42073222609`（event `pull_request`，head `f6cd8cc`）：6 个 job 与 `ci-merge-gate` 全绿；`mergeStateStatus=CLEAN` |
+| 5 | 对比红/绿两种状态的合并能力 | 红（run `42073022764`）：`ci-merge-gate=failure`、`mergeStateStatus=BLOCKED` → 合并被 required check 拒绝；绿（run `42073222609`）：`ci-merge-gate=success`、`mergeStateStatus=CLEAN` → 可合并。分支保护：`ci-merge-gate` required、`strict=true`、`enforce_admins=true`、线性历史、禁 force push |
+
+**硬约束核验**：canary PR 全程零 label（未打 `baseline`，该 label 在新仓库中已不存在）；修复由新 commit 触发 `synchronize`，非手动 Re-run；6 个子 job 与 `ci-merge-gate` 名称保持稳定；未修改 `ci-ownership` 规则、`.github/workflows`、分支保护或 required check；失败回传由平台自动完成，编排器仅在红状态之前发送过一次阶段推进信号（未包含失败内容），红状态下未发送任何修复指令或失败转述。
+
+**DoD 核对**：5 步各有一条可追溯证据（PR URL、Actions run ID、失败 job 名、回传时间戳、修复 commit SHA）✅；失败确实来自 `ci-ownership` 且输出含 `out of scope`，非环境噪声 ✅；平台自动回传原 Worker（非人工转述）并有通知记录 ✅；红状态合并被 required check 拒绝、修复后 `synchronize` 新一轮 6 job 全绿可合并 ✅；本记录追加到 §10 末尾并保留演练 PR 链接 ✅。
+
+**演练 PR 保留链接**：canary PR #4 https://github.com/tiisi123/ai_wealth/pull/4 （保留、未合并）；演练记录 PR #3 https://github.com/tiisi123/ai_wealth/pull/3 （docs/ owner 分支 `ao/docs/canary-wiring-check`，合并入 main）。
+
 ## 11. AO 平台交接清单（2026-11-05）
 
 > **历史重写说明（2026-11-05）**：为移除随初始提交带入的三份内部文档，仓库历史已压成**单一初始 commit**。上文及本文件中出现的 `d5fd39e`、`c0142fa`、`78ebbfa`、`beaf08a`、`e3aff11`、`5022fbe`、`25e8713`、PR #1、两轮 Actions run 编号等，均为**旧历史中的事实记录**，对应 commit / PR / tag / run 在当前仓库已不存在。当前一律以 `origin/main` 的 HEAD 为唯一基线，AO Worker 必须从它创建 worktree；`w1-baseline-2026-11-05` / `w1-baseline-2026-11-04` 两个 tag 均已删除，仅作历史记录，不得作为分叉依据（旧 tag 的 tree 含过时的分支保护描述）。
