@@ -19,7 +19,7 @@ W1 使用真实 PostgreSQL 与 pgvector 扩展，数据集是固定 fixture，AI
 
 本地验证（2026-11-04，真实 PostgreSQL 16.1 + 本机编译的 pgvector 0.8.0 + Chromium 1248）：`node --check` 全量 0 错误；`npm test` 83 项（73 通过、10 项 DB 集成本地跳过、0 失败，且在 `AI_MODE=fixture` 环境污染模拟下仍 73/0）；`W1_DB_SMOKE=true npm run test:integration` **10/10 通过**；`npm run test:e2e` **15/15 通过**（含 C 类真状态、刷新恢复与兜底失败态）。本机 Docker 引擎 API 返回 500 不可用，验证改由本机 PostgreSQL 承载，步骤见 `docs/operations.md`。**GitHub Actions 已实跑（2026-11-05）**：PR #1 两轮 CI，第二轮 run `42049768111` 的 6 个 job 与 `ci-merge-gate` 全绿；PR 已合并，`origin/main` = `5022fbe`。详见 `docs/pr-merge-gate-ci.md` §9。
 
-> **历史重写说明（2026-11-05）**：为移除随初始提交带入的三份内部文档，仓库历史已压成**单一初始 commit**。上文及本文件中出现的 `d5fd39e`、`c0142fa`、`78ebbfa`、`beaf08a`、`e3aff11`、`5022fbe`、`25e8713`、PR #1、两轮 Actions run 编号等，均为**旧历史中的事实记录**，对应 commit / PR / tag / run 在当前仓库已不存在。当前一律以 `origin/main` 的 HEAD 与重建后的 `w1-baseline-2026-11-05` tag 为准；AO Worker 必须从当前基线创建 worktree。
+> **历史重写说明（2026-11-05）**：为移除随初始提交带入的三份内部文档，仓库历史已压成**单一初始 commit**。上文及本文件中出现的 `d5fd39e`、`c0142fa`、`78ebbfa`、`beaf08a`、`e3aff11`、`5022fbe`、`25e8713`、PR #1、两轮 Actions run 编号等，均为**旧历史中的事实记录**，对应 commit / PR / tag / run 在当前仓库已不存在。当前一律以 `origin/main` 的 HEAD 为唯一基线，AO Worker 必须从它创建 worktree；`w1-baseline-2026-11-05` / `w1-baseline-2026-11-04` 两个 tag 均已删除，仅作历史记录，不得作为分叉依据（旧 tag 的 tree 含过时的分支保护描述）。
 
 正式启动前的 P0 应收敛为以下内容。当前状态逐项标注如下。
 
@@ -65,7 +65,7 @@ W1 使用真实 PostgreSQL 与 pgvector 扩展，数据集是固定 fixture，AI
 
    [wealth-prototype-demo-architecture.md](C:/Users/jerry/projects/ai_wealth/wealth-prototype-demo-architecture.md:3) 已统一为 V2.3、日期 2026-11-04，测试数量统一为 57（47 单元/API + 10 DB 集成），W1 范围以本文件为准。
 
-   **已完成**：2026-11-04 提交基线 `c0142fa`（62 个文件，4120 insertions / 641 deletions），并打 annotated tag `w1-baseline-2026-11-04`。`README.md` 已恢复并重写为 V2.3；3 个 `__extract*` 临时文件加入 `.gitignore` 排除，误提交的 Office 锁文件已删除；`.env` 与 `qwen.key` 未纳入。沿用初始提交的 `Agent Orchestrator <ao@example.com>` 身份（仅本次命令环境变量，未写任何 git config）。**未 push**：`origin/main` 仍停在 `d5fd39e`。AO 的所有 Worker 必须从 `w1-baseline-2026-11-05` 创建 worktree（2026-11-05 统一提交后的新基线 tag；`w1-baseline-2026-11-04` 保留为历史记录），不能继续从 `d5fd39e` 分叉。
+   **已完成**：2026-11-04 提交基线 `c0142fa`（62 个文件，4120 insertions / 641 deletions），并打 annotated tag `w1-baseline-2026-11-04`。`README.md` 已恢复并重写为 V2.3；3 个 `__extract*` 临时文件加入 `.gitignore` 排除，误提交的 Office 锁文件已删除；`.env` 与 `qwen.key` 未纳入。沿用初始提交的 `Agent Orchestrator <ao@example.com>` 身份（仅本次命令环境变量，未写任何 git config）。**未 push**：`origin/main` 仍停在 `d5fd39e`。AO 的所有 Worker 必须从 `origin/main` 的 HEAD 创建 worktree；`w1-baseline-2026-11-05` / `w1-baseline-2026-11-04` 两个 tag 均已删除，仅作历史记录，不得作为分叉依据（旧 tag 的 tree 含过时的分支保护描述）。
 
 3. **冻结前后端状态契约** —— ✅ 已落地
 
