@@ -51,19 +51,57 @@ function productEvidence(product, dataAsOf) {
   };
 }
 
+// 每条结构化事实携带其对应的确定性计算结果，模型引用计算 ID 时能回到同一份证据包的数值；
+// 计算仍以顶层 calculations 为准，此处只是同一对象的同源副本。生成的证据包已经带有
+// 这些字段时不会被改动。
+function attachCalculations(structuredFacts, calculations) {
+  const byCalculationId = new Map(calculations.filter((calculation) => calculation?.calculation_id).map((calculation) => [calculation.calculation_id, calculation]));
+  const portfolio = calculations.find((calculation) => Array.isArray(calculation.weights));
+  const candidateCalc = calculations.find((calculation) => Array.isArray(calculation.candidate_ids));
+  return {
+    ...structuredFacts,
+    holdings: (structuredFacts.holdings || []).map((holding) => ({
+      ...holding,
+      ...(portfolio ? { portfolio_calculation: byCalculationId.get(portfolio.calculation_id) } : {})
+    })),
+    products: (structuredFacts.products || []).map((product) => ({
+      ...product,
+      ...(candidateCalc && candidateCalc.candidate_ids.includes(product.id) ? { candidate_calculation: byCalculationId.get(candidateCalc.calculation_id) } : {})
+    }))
+  };
+}
+
 function toEvidence({ snapshot, chunks, calculations = [], rules = [] }) {
-  const structuredFacts = {
+  let structuredFacts = {
     holdings: snapshot.holdings.map((holding) => holdingEvidence(holding, snapshot.data_as_of)),
     products: snapshot.products.map((product) => productEvidence(product, snapshot.data_as_of))
   };
   if (snapshot.customer) structuredFacts.customer = redactCustomer(snapshot.customer);
+  structuredFacts = attachCalculations(structuredFacts, calculations);
   return {
     structured_facts: structuredFacts,
     ...(snapshot.customer ? { customer_context: { customer_id: snapshot.customer.id, risk_level: snapshot.customer.risk_level } } : {}),
-    calculations,
+    calculations: evidenceCalculations({ calculations, structured_facts: structuredFacts }),
     knowledge_chunks: chunks,
     rule_candidates: rules.map(({ rule_id, rule_version, name, applicable_scenario, required_inputs, conditions, enabled }) => ({ rule_id, rule_version, name, applicable_scenario, required_inputs, conditions, enabled }))
   };
+}
+
+// 允许的引用集合由同一函数给出：顶层 calculations 与结构化事实中嵌入的同一计算结果，
+// 这样 responseEvidence 也能把模型引用过的计算 ID 归一化进 calculation_ids，而不改变引用条数。
+// 程序执行成功的规则计算并入证据包，使 rule:引用与该计算 ID 都能回指本次证据。
+export function finalizeEvidence(evidence, ruleResult = null) {
+  const calculations = [...(evidence.calculations || [])];
+  if (ruleResult?.status === 'MATCHED' && ruleResult.calculation_id && !calculations.some((item) => item.calculation_id === ruleResult.calculation_id)) {
+    calculations.push({ calculation_id: ruleResult.calculation_id, rule_id: ruleResult.rule_id, rule_version: ruleResult.rule_version, result: ruleResult.result });
+  }
+  const finalized = {
+    ...evidence,
+    structured_facts: attachCalculations(evidence.structured_facts || {}, calculations),
+    calculations
+  };
+  finalized.calculations = evidenceCalculations(finalized);
+  return finalized;
 }
 
 function portfolioCalculation(holdings) {
@@ -140,6 +178,30 @@ function scopeTaskFacts({ taskType, snapshot, session, productIds }) {
   return { snapshot: base, calculations };
 }
 
+function embeddedCalculations(evidence) {
+  const embedded = [];
+  const add = (calculation) => {
+    if (calculation && typeof calculation === 'object' && calculation.calculation_id && !embedded.some((item) => item.calculation_id === calculation.calculation_id)) {
+      embedded.push(calculation);
+    }
+  };
+  (evidence.structured_facts.products || []).forEach((product) => add(product.candidate_calculation));
+  (evidence.structured_facts.holdings || []).forEach((holding) => add(holding.portfolio_calculation));
+  return embedded;
+}
+
+// 引用的计算 ID 必须出现在顶层 calculations 中，响应才能回指到本次证据包的数值。
+function evidenceCalculations(evidence) {
+  const all = [...(evidence.calculations || []), ...embeddedCalculations(evidence)];
+  return all.filter((calculation, index) => calculation?.calculation_id && all.findIndex((item) => item?.calculation_id === calculation.calculation_id) === index);
+}
+
+function isCitationAllowed(id, sets) {
+  // 模型可能按“rule:固定”措辞自行加前缀；规则引用按前缀解析后再匹配目录。
+  const ruleId = typeof id === 'string' && id.startsWith('rule:') ? id.slice('rule:'.length) : null;
+  return sets.data.has(id) || sets.calculations.has(id) || sets.chunks.has(id) || (ruleId !== null && sets.rules.has(ruleId));
+}
+
 function citationSets(evidence) {
   const data = new Set();
   if (evidence.structured_facts.customer) data.add(evidence.structured_facts.customer.data_id);
@@ -147,9 +209,9 @@ function citationSets(evidence) {
   for (const product of evidence.structured_facts.products) data.add(product.data_id);
   return {
     data,
-    calculations: new Set(evidence.calculations.map((calculation) => calculation.calculation_id).filter(Boolean)),
+    calculations: new Set(evidenceCalculations(evidence).map((calculation) => calculation.calculation_id)),
     chunks: new Set(evidence.knowledge_chunks.map((chunk) => chunk.chunk_id)),
-    rules: new Set(evidence.rule_candidates.map((rule) => `rule:${rule.rule_id}`))
+    rules: new Set(evidence.rule_candidates.map((rule) => rule.rule_id))
   };
 }
 
@@ -161,31 +223,37 @@ function validateGeneratedOutput(output, taskType, evidence) {
     throw new ValidationError('extracted_inputs 必须是对象', { task_type: taskType });
   }
   const allowed = citationSets(evidence);
-  const whitelist = new Set([...allowed.data, ...allowed.calculations, ...allowed.chunks, ...allowed.rules]);
-  const invalid = output.citations.filter((id) => typeof id !== 'string' || !whitelist.has(id));
+  const invalid = output.citations.filter((id) => typeof id !== 'string' || !isCitationAllowed(id, allowed));
   if (invalid.length) throw new ValidationError('模型引用不属于本次证据白名单', { invalid_citations: invalid });
   if (KNOWLEDGE_REQUIRED.has(taskType) && !output.citations.some((id) => allowed.chunks.has(id))) {
     throw new ValidationError('研究、摘要和写作必须至少引用一个知识片段', { task_type: taskType });
   }
   if (!output.citations.length) throw new ValidationError('内容生成必须至少包含一个有效引用', { task_type: taskType });
+  // A23：只接受与证据包 enabled=true 规则版本完全一致的 rule_id，任何动作或比例都不取自模型。
   if (taskType === 'rule_match' && output.rule_id && !evidence.rule_candidates.some((rule) => rule.rule_id === output.rule_id && rule.rule_version === output.rule_version && rule.enabled !== false)) {
     throw new ValidationError('模型选择了不存在、未启用或版本不匹配的规则', { rule_id: output.rule_id, rule_version: output.rule_version });
+  }
+  if (taskType === 'rule_match' && Array.isArray(output.actions)) {
+    throw new ValidationError('模型不能返回规则动作，配置比例只由程序执行规则决定', { task_type: taskType });
+  }
+  // A07：比较排名与优劣结论属于业务判定，模型只能解释同口径比较，不能自行排名。
+  if (Array.isArray(output.ranking) || output.ranking !== undefined) {
+    throw new ValidationError('模型不能输出比较排名，比较结论只来自同口径确定性比较', { task_type: taskType });
   }
   return output;
 }
 
-function responseEvidence(output, evidence, ruleResult) {
+function responseEvidence(output, evidence) {
   const allowed = citationSets(evidence);
   const citations = [...new Set(output.citations)];
-  const calculationIds = citations.filter((id) => allowed.calculations.has(id));
-  for (const calculation of evidence.calculations) {
-    if (calculation.calculation_id && !calculationIds.includes(calculation.calculation_id)) calculationIds.push(calculation.calculation_id);
-  }
-  if (ruleResult?.calculation_id && !calculationIds.includes(ruleResult.calculation_id)) calculationIds.push(ruleResult.calculation_id);
   const chunkIds = citations.filter((id) => allowed.chunks.has(id));
+  const ruleIds = citations.map((id) => (typeof id === 'string' && id.startsWith('rule:') ? id.slice('rule:'.length) : null)).filter((id) => id !== null && allowed.rules.has(id));
   return {
     data_ids: citations.filter((id) => allowed.data.has(id)),
-    calculation_ids: calculationIds,
+    calculation_ids: citations.filter((id) => allowed.calculations.has(id)),
+    // rule:<id> 的逐字 ID 原样保留；rule_ids 只认证据包内 enabled 的规则，不扩展成其他计算。
+    rule_citations: citations.filter((id) => typeof id === 'string' && id.startsWith('rule:') && allowed.rules.has(id.slice('rule:'.length))),
+    rule_ids: ruleIds,
     chunk_ids: chunkIds,
     retrieval_scores: chunkIds.map((id) => {
       const chunk = evidence.knowledge_chunks.find((item) => item.chunk_id === id);
@@ -340,12 +408,18 @@ export class AiOrchestrator {
       scoped.snapshot.products = snapshot.products.filter((product) => relatedIds.has(product.id));
     }
 
-    const evidence = toEvidence({ snapshot: scoped.snapshot, chunks, calculations: scoped.calculations, rules });
+    const generationEvidence = toEvidence({ snapshot: scoped.snapshot, chunks, calculations: scoped.calculations, rules });
     const response = await this.client.generate({
       system: systemPromptFor(taskType),
-      user: JSON.stringify({ task_type: taskType, input, product_ids: productIds, source_ids: sourceIds, evidence }, null, 2)
+      user: JSON.stringify({ task_type: taskType, input, product_ids: productIds, source_ids: sourceIds, evidence: generationEvidence }, null, 2)
     });
-    const output = validateGeneratedOutput(response, taskType, evidence);
+    // A18：旧响应不得覆盖新状态。先确认会话未推进，再执行规则，避免为过期响应写入计算。
+    const latestSession = await this.sessionService.get(sessionId);
+    if (latestSession.version !== sessionVersion) {
+      throw new ConflictError('AI 生成期间会话版本已变化', { current_version: latestSession.version, session_id: sessionId });
+    }
+
+    const output = validateGeneratedOutput(response, taskType, generationEvidence);
 
     let ruleResult = null;
     let extractedInputs = {};
@@ -364,19 +438,21 @@ export class AiOrchestrator {
         ruleResult = { status: 'NEED_CONFIRMATION', rule_id: output.rule_id, rule_version: output.rule_version, missing_fields: missing };
       } else {
         ruleResult = await this.rulesService.matchAndExecute({ ruleId: output.rule_id, ruleVersion: output.rule_version, inputs: extractedInputs });
+        // 只有程序校验并执行成功的规则才能进入证据计算；未匹配时不产生任何计算或动作。
+        if (ruleResult.status === 'MATCHED' && ruleResult.calculation_id) {
+          ruleResult = { ...ruleResult, rule_source: 'program_validated' };
+        }
       }
     }
 
-    const latestSession = await this.sessionService.get(sessionId);
-    if (latestSession.version !== sessionVersion) {
-      throw new ConflictError('AI 生成期间会话版本已变化', { current_version: latestSession.version, session_id: sessionId });
-    }
+    // 返回的证据包就是生成时交给模型的那一份（同一引用），不重新拼装；模型无法改写其中的数值或规则动作。
+    const evidence = finalizeEvidence(generationEvidence, ruleResult);
 
     return {
       request_id: requestId,
       text: output.text,
       citations: output.citations,
-      evidence: responseEvidence(output, evidence, ruleResult),
+      evidence: responseEvidence(output, evidence),
       data_as_of: snapshot.data_as_of,
       data_version: snapshot.data_version,
       knowledge_version: knowledgeVersion,
@@ -390,7 +466,9 @@ export class AiOrchestrator {
         ...ruleResult,
         missing_fields: ruleResult.missing_fields || [],
         extracted_inputs: extractedInputs,
-        confidence
+        confidence,
+        // 规则是否由程序执行、动作是否来自规则目录，必须对前端可见，不能只看模型输出。
+        validated_by_program: ruleResult.status === 'MATCHED'
       } : {})
     };
   }
