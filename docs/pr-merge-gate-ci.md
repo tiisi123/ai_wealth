@@ -86,7 +86,7 @@ concurrency:
 
 每次 PR 新提交只保留最新一次运行。不要对 required workflow 使用 paths 过滤，避免某类文件变更导致必需检查没有报告状态。
 
-启用 GitHub Merge Queue 时必须监听 merge_group，这样多个 Agent 的 PR 会在组合后的临时分支上再次执行相同门禁。
+启用 GitHub Merge Queue 时必须监听 merge_group，这样多个 Agent 的 PR 会在组合后的临时分支上再次执行相同门禁。**（现状备注：MQ 未可用，现以顺序合并替代，见 §11.1；本条保留为规划表述。）**
 
 ## 4. PR Merge-Gate Job
 
@@ -318,7 +318,7 @@ codex/feature-session-command-tests
 1. 以开发分支为 base；
 2. 等实现接口稳定后重新运行；
 3. 或将测试提交合并到功能 PR；
-4. 最终以包含实现和测试的组合提交进入 Merge Queue。
+4. 最终以包含实现和测试的组合提交进入 Merge Queue。**（现状备注：MQ 未可用，现以顺序合并 + stacked PR 替代，见 §11.1；本条保留为规划表述。）**
 
 ## 6. Orchestrator.inc 闭环约定
 
@@ -366,7 +366,7 @@ PR Merge-Gate CI 方案完成的判断条件：
 - 关键前端流程有 Playwright 冒烟测试（15 项用例已在真实 PostgreSQL + Chromium 跑绿）；
 - 测试失败可以通过 Orchestrator 回传到原 Worker；
 - 主分支禁止绕过 required check；
-- 多个独立 PR 通过 Merge Queue 的组合验证后才能合并。
+- 多个独立 PR 通过 Merge Queue 的组合验证后才能合并。**（现状备注：MQ 未可用，现以顺序合并替代——每个 PR 经 6 job 与 ci-merge-gate 全绿后由编排器串行合并，其余 PR 同步最新 main 重跑 CI；见 §11.1。本条保留为原方案表述。）**
 
 
 
@@ -467,6 +467,13 @@ PR Merge-Gate CI 方案完成的判断条件：
 
 ### 11.1 并行研发前置就绪
 
-- Merge Queue 已启用；
+- **MQ 未可用**：Merge Queue 在本仓库不可用，已放弃并改用「顺序合并 + stacked PR」替代——每个 PR 的 6 个 job 与 `ci-merge-gate` 全绿后，由编排器串行合并；其余 PR 随即同步最新 `main` 并重跑 CI，`strict` required check 保证合并时与最新 `main` 一致（该做法不等于 MQ 的自动组合验证，不提供 merge_group 上的组合执行）；
 - 规格 xlsx 已补回，但按约定不入库；
 - 平台 AO 已接入（daemon、`ao session claim-pr`、失败自动回传原 Worker 均已实证，见 §10.1）。
+
+**MQ 不可用的事实与决策（2026-11-05）**：
+
+- 事实：本仓库 `owner_type=User`（个人账号下的 PUBLIC 仓库）；GitHub 官方文档明确 Merge Queue **仅支持组织拥有的仓库**。
+- 验证：GraphQL、REST、ruleset 三条路径均实测不可用——`merge_queue` rule 的 POST 返回 `422`，未创建任何 ruleset。
+- 决策：由用户拍板**放弃 MQ**，改用**顺序合并 + stacked PR**：每个 PR 的 6 个 job 与 `ci-merge-gate` 全绿后由编排器串行合并；其余 PR 随后同步最新 `main` 重跑 CI，由 `strict` required check 保证与最新 `main` 一致。
+- 边界：该替代**不等价于** MQ 的自动组合验证（不在 `merge_group` 临时分支上组合执行），§3 的 `merge_group` 监听仅为将来组织仓库保留的规划表述。
