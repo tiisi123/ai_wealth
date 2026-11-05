@@ -1,5 +1,5 @@
 import { createContainer } from '../src/compositionRoot.js';
-import { applyMigrations } from './lib/apply-migrations.js';
+import { applyMigrations } from './seed/applyMigrations.js';
 
 const container = createContainer();
 if (!container.db.enabled) throw new Error('DATABASE_URL is required for migrations');

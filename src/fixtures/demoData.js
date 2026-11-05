@@ -165,18 +165,6 @@ export const knowledgeChunks = [
   }
 ];
 
-// Deterministic deposit-interest fixture for the deposit-interest-simple rule
-// (principal * annual_rate * years). Principal is holding-003 and the rate is
-// the deposit product's annual_rate, so the page calculation can be recomputed
-// from seeded data alone.
-export const depositInterestInputs = {
-  product_id: 'deposit',
-  holding_id: 'holding-003',
-  principal: 300000,
-  annual_rate: 0.0215,
-  years: 3
-};
-
 export function defaultSessionState() {
   return {
     customerName: customer.name,

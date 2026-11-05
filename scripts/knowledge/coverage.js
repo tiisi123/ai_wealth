@@ -1,6 +1,5 @@
 import { pathToFileURL } from 'node:url';
 import { products, holdings, knowledgeChunks, DATA_AS_OF, DATA_VERSION, KNOWLEDGE_VERSION } from '../../src/fixtures/demoData.js';
-import { rules } from '../../src/fixtures/rules.js';
 
 /**
  * W1 fixture coverage report. Answers "which product actually has knowledge
@@ -64,7 +63,6 @@ export function buildCoverageReport() {
     data_version: DATA_VERSION,
     knowledge_version: KNOWLEDGE_VERSION,
     data_as_of: DATA_AS_OF,
-    rule_ids: rules.map((rule) => rule.rule_id),
     chunk_total: knowledgeChunks.length,
     chunk_products: [...chunksByProduct.keys()].sort(),
     products: productRows,
