@@ -379,7 +379,7 @@ PR Merge-Gate CI 方案完成的判断条件：
 1. 统一提交剩余改动（一个 commit），并在新 commit 上新建 annotated tag `w1-baseline-2026-11-05`；`CONTEXT.md` 与本文档的规范引用指向新 tag，旧 tag `w1-baseline-2026-11-04` 仅保留为历史记录。
 2. 建分支并推送：`git switch -c ao/orchestrator/w1-baseline && git push -u origin ao/orchestrator/w1-baseline`。
 3. 用 `gh pr create --base main --head ao/orchestrator/w1-baseline --label baseline` 创建 PR（label 在创建时即挂上，首次 CI run 就能读到 `PR_LABELS`）。首个 PR 包含跨 13 类 owner 的全部改动，无法归属单一 Agent；`ci-ownership` 检测 `baseline` label 后打印豁免说明并 exit 0（job 仍为 success，`ci-merge-gate` 汇总逻辑不变）。此豁免仅用于一次性初始化 PR，之后所有 Worker PR 必须走正常 ownership 校验。
-4. **本步受阻**：`gh api -X PUT repos/tiisi123/ai_wealth/branches/main/protection` 返回 `403 Upgrade to GitHub Pro or make this repository public`——仓库为 PRIVATE，免费计划不支持分支保护。因此 `ci-merge-gate` **未能设为 required check**，`ci-ownership` 目前只能让 PR 报红、拦不住合并。需先决定：仓库改 public / 升级 Pro / 接受软约束（合并前人工 `gh pr checks`）。
+4. **已完成（2026-11-05）**：仓库删除重建并改为 PUBLIC 后，`gh api -X PUT repos/tiisi123/ai_wealth/branches/main/protection` 成功；`ci-merge-gate` 为 required check（`strict=true`、`enforce_admins=true`、线性历史、禁 force push）。首次调用曾返回 `403 Repository has been locked`（可见性变更后的临时锁定），重试即通过。
 5. 观察 6 个 job：`ci-static`、`ci-unit-api`（含覆盖率报告 artifact）、`ci-db-smoke`（pgvector service + migrate + 两次 seed）、`ci-e2e-smoke`（Chromium 下载 + 15 项 E2E）、`ci-ownership`、`ci-security`（audit + 密钥扫描）。CI 使用 Docker pgvector 镜像与 Ubuntu runner，正好验证本机 Docker 引擎 API 500 时无法覆盖的路径；覆盖率报告用于事后定阈值，不影响本次合并。
 6. 合并后 Worker 从新 `main` 分叉，分支统一 `ao/<agent-id>/<topic>`、由 AO 分配；越界改动在 CI 阶段被拦。随后执行 P0 #7 的 AO canary 演练（故意失败 → 回传 → 修复 → 重触发 → 门禁拦截）。
 
@@ -423,13 +423,13 @@ PR Merge-Gate CI 方案完成的判断条件：
 
 > **历史重写说明（2026-11-05）**：为移除随初始提交带入的三份内部文档，仓库历史已压成**单一初始 commit**。上文及本文件中出现的 `d5fd39e`、`c0142fa`、`78ebbfa`、`beaf08a`、`e3aff11`、`5022fbe`、`25e8713`、PR #1、两轮 Actions run 编号等，均为**旧历史中的事实记录**，对应 commit / PR / tag / run 在当前仓库已不存在。当前一律以 `origin/main` 的 HEAD 与重建后的 `w1-baseline-2026-11-05` tag 为准；AO Worker 必须从当前基线创建 worktree。
 
-基线 PR #1 已合并、GitHub Actions 首次实跑完成。以下为转交 WorkBuddy AO 平台侧的材料。
+仓库已删除重建并改为 PUBLIC，基线为单一 commit `2d9ad15`；以下为转交 WorkBuddy AO 平台侧的材料。
 
-- **基线**：PR #1 的 merge commit `5022fbe`；`origin/main` 可能已有后续文档同步提交，以远端 HEAD 为准。tag `w1-baseline-2026-11-05` 指向统一提交 `beaf08a`，旧 tag `w1-baseline-2026-11-04` 为历史记录。
+- **基线**：单一 commit `2d9ad15`（`origin/main` HEAD）；tag `w1-baseline-2026-11-05` 指向它。旧 PR / merge commit / 旧 tag 已随仓库重建消失。
 - **必须先处理**：现存 AO orchestrator worktree `~/.ao/data/worktrees/ai_wealth/orchestrator/ai_wealth-orchestrator` 仍停在 `d5fd39e`。转场前须用新基线重建，否则 Worker 从缺全部改动的旧代码分叉。
 - **目录边界**：`scripts/ci/check-ownership.mjs` 的 13 类 agent id 与 `OWNERSHIP` 最长前缀表；分支统一 `ao/<agent-id>/<topic>`，由 AO 分配、Worker 不可自选；越界或未登记路径默认拒绝。
 - **门禁**：6 个 job（`ci-static`、`ci-unit-api`、`ci-db-smoke`、`ci-e2e-smoke`、`ci-ownership`、`ci-security`）+ `ci-merge-gate` 汇总。`baseline` label 豁免仅用于一次性初始化 PR，Worker PR 不适用（canary PR 绝不能带此 label）。
 - **覆盖率**：仅上传 `coverage-report.txt` artifact，不设阈值、不阻断。
-- **已知限制**：仓库 PRIVATE + 免费计划 → 分支保护 403，`ci-merge-gate` 未成为 required check。`ci-ownership` 只能报红、不能阻止合并；§10 canary 的「红状态合并被拒」DoD 因此无法达成，需先解决分支保护方案。
+- **分支保护已启用**：`ci-merge-gate` 为 required check，`ci-ownership` 能阻止越界 PR 合并；§10 canary 的「红状态合并被拒」DoD 现已可达成。仓库为 PUBLIC，三份内部文档已随旧仓库删除而清除（旧 commit SHA 经 API 验证返回 422）。
 - **平台侧待确认**：`orchestrator.inc` 是否接入本仓库、`ao session claim-pr` 入口、Worker 分配方式与失败通知通道；本机未找到 `ao` CLI 与 `orchestrator.inc` 实体。
 - **AO canary**：方案见 §10，故意失败注入点为 `ci-ownership` 越界；DoD 要求平台自动回传原 Worker，不接受人工模拟。

@@ -167,7 +167,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-`ci-security` 已落地（audit + 密钥扫描，纳入门禁汇总）；覆盖率按约定**仅上传报告 artifact、不设阈值不阻断**，待首次实跑拿到 CI 环境干净数字后再定阈值。本地已在真实 PostgreSQL 16.1 + pgvector 0.8.0 + Chromium 上跑通三层门禁（`npm test` 73/83、`test:integration` 10/10、`test:e2e` 15/15）；GitHub Actions 已实跑：PR #1 第二轮 run `42049768111` 的 6 个 job 与 `ci-merge-gate` 全绿，已合并到 `origin/main`（`5022fbe`）。仓库为 PRIVATE，免费计划下分支保护返回 403，required check 尚未启用。`ci-unit-api` 显式 `AI_MODE=real`，因为该 job 使用 mock model client 验证真实错误路径，不能被全局 fixture 模式改写。
+`ci-security` 已落地（audit + 密钥扫描，纳入门禁汇总）；覆盖率按约定**仅上传报告 artifact、不设阈值不阻断**，待首次实跑拿到 CI 环境干净数字后再定阈值。本地已在真实 PostgreSQL 16.1 + pgvector 0.8.0 + Chromium 上跑通三层门禁（`npm test` 73/83、`test:integration` 10/10、`test:e2e` 15/15）；GitHub Actions 已实跑：PR #1 第二轮 run `42049768111` 的 6 个 job 与 `ci-merge-gate` 全绿，已合并到 `origin/main`（`5022fbe`）。仓库已删除重建为 **PUBLIC**（三份内部文档已随旧历史清除，旧 commit SHA 经 API 验证不可取回），`ci-merge-gate` 已设为 required check。`ci-unit-api` 显式 `AI_MODE=real`，因为该 job 使用 mock model client 验证真实错误路径，不能被全局 fixture 模式改写。
 
 本地若不想下载 Chromium，可设 `E2E_BROWSER_CHANNEL=chrome`（或 `msedge`）复用系统浏览器；CI 不设该变量，使用 `playwright install` 的锁定版本。
 
