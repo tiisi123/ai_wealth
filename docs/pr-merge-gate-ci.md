@@ -376,7 +376,7 @@ PR Merge-Gate CI 方案完成的判断条件：
 
 前置事实（执行前）：远端 `origin/main` 停在 `d5fd39e`。`gh` 位于 `C:\Program Files\GitHub CLI\gh.exe`（不在 PATH，用完整路径调用），已登录 `tiisi123` 且 `viewerPermission=ADMIN`，scopes 含 `repo` / `workflow`。
 
-1. 统一提交剩余改动（一个 commit），并在新 commit 上新建 annotated tag `w1-baseline-2026-11-05`；`CONTEXT.md` 与本文档的规范引用指向新 tag，旧 tag `w1-baseline-2026-11-04` 仅保留为历史记录。
+1. 统一提交剩余改动（一个 commit）。基线一律以 `origin/main` 的 HEAD 为准；`w1-baseline-2026-11-05` / `w1-baseline-2026-11-04` 两个 tag 已删除，不再作为分叉依据（旧 tag 的 tree 含过时的分支保护描述）。
 2. 建分支并推送：`git switch -c ao/orchestrator/w1-baseline && git push -u origin ao/orchestrator/w1-baseline`。
 3. 用 `gh pr create --base main --head ao/orchestrator/w1-baseline --label baseline` 创建 PR（label 在创建时即挂上，首次 CI run 就能读到 `PR_LABELS`）。首个 PR 包含跨 13 类 owner 的全部改动，无法归属单一 Agent；`ci-ownership` 检测 `baseline` label 后打印豁免说明并 exit 0（job 仍为 success，`ci-merge-gate` 汇总逻辑不变）。此豁免仅用于一次性初始化 PR，之后所有 Worker PR 必须走正常 ownership 校验。
 4. **已完成（2026-11-05）**：仓库删除重建并改为 PUBLIC 后，`gh api -X PUT repos/tiisi123/ai_wealth/branches/main/protection` 成功；`ci-merge-gate` 为 required check（`strict=true`、`enforce_admins=true`、线性历史、禁 force push）。首次调用曾返回 `403 Repository has been locked`（可见性变更后的临时锁定），重试即通过。
@@ -421,11 +421,11 @@ PR Merge-Gate CI 方案完成的判断条件：
 
 ## 11. AO 平台交接清单（2026-11-05）
 
-> **历史重写说明（2026-11-05）**：为移除随初始提交带入的三份内部文档，仓库历史已压成**单一初始 commit**。上文及本文件中出现的 `d5fd39e`、`c0142fa`、`78ebbfa`、`beaf08a`、`e3aff11`、`5022fbe`、`25e8713`、PR #1、两轮 Actions run 编号等，均为**旧历史中的事实记录**，对应 commit / PR / tag / run 在当前仓库已不存在。当前一律以 `origin/main` 的 HEAD 与重建后的 `w1-baseline-2026-11-05` tag 为准；AO Worker 必须从当前基线创建 worktree。
+> **历史重写说明（2026-11-05）**：为移除随初始提交带入的三份内部文档，仓库历史已压成**单一初始 commit**。上文及本文件中出现的 `d5fd39e`、`c0142fa`、`78ebbfa`、`beaf08a`、`e3aff11`、`5022fbe`、`25e8713`、PR #1、两轮 Actions run 编号等，均为**旧历史中的事实记录**，对应 commit / PR / tag / run 在当前仓库已不存在。当前一律以 `origin/main` 的 HEAD 为唯一基线，AO Worker 必须从它创建 worktree；`w1-baseline-2026-11-05` / `w1-baseline-2026-11-04` 两个 tag 均已删除，仅作历史记录，不得作为分叉依据（旧 tag 的 tree 含过时的分支保护描述）。
 
 仓库已删除重建并改为 PUBLIC，基线为单一 commit `2d9ad15`；以下为转交 WorkBuddy AO 平台侧的材料。
 
-- **基线**：单一 commit `2d9ad15`（`origin/main` HEAD）；tag `w1-baseline-2026-11-05` 指向它。旧 PR / merge commit / 旧 tag 已随仓库重建消失。
+- **基线**：`origin/main` 的 HEAD（以远端为准），AO Worker 必须从它创建 worktree。`w1-baseline-2026-11-05` tag 已删除，其 tree 含过时的分支保护描述，**不得用于分叉**；旧 PR / merge commit / 旧 tag 已随仓库重建消失。
 - **必须先处理**：现存 AO orchestrator worktree `~/.ao/data/worktrees/ai_wealth/orchestrator/ai_wealth-orchestrator` 仍停在 `d5fd39e`。转场前须用新基线重建，否则 Worker 从缺全部改动的旧代码分叉。
 - **目录边界**：`scripts/ci/check-ownership.mjs` 的 13 类 agent id 与 `OWNERSHIP` 最长前缀表；分支统一 `ao/<agent-id>/<topic>`，由 AO 分配、Worker 不可自选；越界或未登记路径默认拒绝。
 - **门禁**：6 个 job（`ci-static`、`ci-unit-api`、`ci-db-smoke`、`ci-e2e-smoke`、`ci-ownership`、`ci-security`）+ `ci-merge-gate` 汇总。`baseline` label 豁免仅用于一次性初始化 PR，Worker PR 不适用（canary PR 绝不能带此 label）。
