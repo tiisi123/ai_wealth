@@ -86,7 +86,7 @@ concurrency:
 
 每次 PR 新提交只保留最新一次运行。不要对 required workflow 使用 paths 过滤，避免某类文件变更导致必需检查没有报告状态。
 
-启用 GitHub Merge Queue 时必须监听 merge_group，这样多个 Agent 的 PR 会在组合后的临时分支上再次执行相同门禁。
+启用 GitHub Merge Queue 时必须监听 merge_group，这样多个 Agent 的 PR 会在组合后的临时分支上再次执行相同门禁。**（现状备注：MQ 未可用，现以顺序合并替代，见 §11.1；本条保留为规划表述。）**
 
 ## 4. PR Merge-Gate Job
 
@@ -318,7 +318,7 @@ codex/feature-session-command-tests
 1. 以开发分支为 base；
 2. 等实现接口稳定后重新运行；
 3. 或将测试提交合并到功能 PR；
-4. 最终以包含实现和测试的组合提交进入 Merge Queue。
+4. 最终以包含实现和测试的组合提交进入 Merge Queue。**（现状备注：MQ 未可用，现以顺序合并 + stacked PR 替代，见 §11.1；本条保留为规划表述。）**
 
 ## 6. Orchestrator.inc 闭环约定
 
@@ -366,7 +366,7 @@ PR Merge-Gate CI 方案完成的判断条件：
 - 关键前端流程有 Playwright 冒烟测试（15 项用例已在真实 PostgreSQL + Chromium 跑绿）；
 - 测试失败可以通过 Orchestrator 回传到原 Worker；
 - 主分支禁止绕过 required check；
-- 多个独立 PR 通过 Merge Queue 的组合验证后才能合并。
+- 多个独立 PR 通过 Merge Queue 的组合验证后才能合并。**（现状备注：MQ 未可用，现以顺序合并替代——每个 PR 经 6 job 与 ci-merge-gate 全绿后由编排器串行合并，其余 PR 同步最新 main 重跑 CI；见 §11.1。本条保留为原方案表述。）**
 
 
 
@@ -385,7 +385,7 @@ PR Merge-Gate CI 方案完成的判断条件：
 
 观察命令：`gh pr checks 1`、`gh run watch <run-id> --exit-status`、`gh run download <run-id> -n coverage-report`。
 
-## 10. AO canary 演练方案（已定，尚未执行）
+## 10. AO canary 演练方案（已执行，闭环通过，详见 §10.1）
 
 执行时机：§9 首次实跑通过、required check 已勾选之后，Worker 从新 `main` 分叉。
 
@@ -407,7 +407,7 @@ PR Merge-Gate CI 方案完成的判断条件：
 1. canary PR **不得**打 `baseline` label——否则 `ci-ownership` 豁免，故意失败不会发生（该豁免仅用于 §9 的一次性初始化 PR）。
 2. 修复必须由**新 commit** 触发 `synchronize` 重跑，不能用手动 rerun 冒充；`ci-merge-gate` 与 6 个子 job 名称保持稳定，否则平台去重逻辑会漏发通知（§6）。
 
-**平台侧前置（由用户在平台确认）**：`orchestrator.inc` 已接入本仓库；`ao session claim-pr <pr-url>` 可用；Worker 已分配并能接收失败通知；失败检查名称与运行链接可回传。
+**平台侧前置（已确认，由用户在平台侧确认）**：`orchestrator.inc` 已接入本仓库；`ao session claim-pr <pr-url>` 可用；Worker 已分配并能接收失败通知；失败检查名称与运行链接可回传。
 
 **DoD（全部满足才算闭环通过）**：
 
@@ -457,10 +457,23 @@ PR Merge-Gate CI 方案完成的判断条件：
 仓库已删除重建并改为 PUBLIC，基线为单一 commit `2d9ad15`；以下为转交 WorkBuddy AO 平台侧的材料。
 
 - **基线**：`origin/main` 的 HEAD（以远端为准），AO Worker 必须从它创建 worktree。`w1-baseline-2026-11-05` tag 已删除，其 tree 含过时的分支保护描述，**不得用于分叉**；旧 PR / merge commit / 旧 tag 已随仓库重建消失。
-- **必须先处理**：现存 AO orchestrator worktree `~/.ao/data/worktrees/ai_wealth/orchestrator/ai_wealth-orchestrator` 仍停在 `d5fd39e`。转场前须用新基线重建，否则 Worker 从缺全部改动的旧代码分叉。
+- **必须先处理（已完成）**：现存 AO orchestrator worktree `~/.ao/data/worktrees/ai_wealth/orchestrator/ai_wealth-orchestrator` 曾停在 `d5fd39e`，现已用新基线重建。
 - **目录边界**：`scripts/ci/check-ownership.mjs` 的 13 类 agent id 与 `OWNERSHIP` 最长前缀表；分支统一 `ao/<agent-id>/<topic>`，由 AO 分配、Worker 不可自选；越界或未登记路径默认拒绝。
 - **门禁**：6 个 job（`ci-static`、`ci-unit-api`、`ci-db-smoke`、`ci-e2e-smoke`、`ci-ownership`、`ci-security`）+ `ci-merge-gate` 汇总。`baseline` label 豁免仅用于一次性初始化 PR，Worker PR 不适用（canary PR 绝不能带此 label）。
 - **覆盖率**：仅上传 `coverage-report.txt` artifact，不设阈值、不阻断。
 - **分支保护已启用**：`ci-merge-gate` 为 required check，`ci-ownership` 能阻止越界 PR 合并；§10 canary 的「红状态合并被拒」DoD 现已可达成。仓库为 PUBLIC，三份内部文档已随旧仓库删除而清除（旧 commit SHA 经 API 验证返回 422）。
-- **平台侧待确认**：`orchestrator.inc` 是否接入本仓库、`ao session claim-pr` 入口、Worker 分配方式与失败通知通道；本机未找到 `ao` CLI 与 `orchestrator.inc` 实体。
-- **AO canary**：方案见 §10，故意失败注入点为 `ci-ownership` 越界；DoD 要求平台自动回传原 Worker，不接受人工模拟。
+- **平台侧待确认（已确认）**：平台 AO 已接入并实证——AO 桌面版 daemon 运行中，`ao session claim-pr` 可用，`auto_inject_ci` 自动把失败回传原 Worker，`notifications` 去重记录生效；详见 §10.1。
+- **AO canary（已执行通过，见 §10.1）**：故意失败注入点为 `ci-ownership` 越界；DoD 要求平台自动回传原 Worker，不接受人工模拟；5 步闭环均已通过并留证。
+
+### 11.1 并行研发前置就绪
+
+- **MQ 未可用**：Merge Queue 在本仓库不可用，已放弃并改用「顺序合并 + stacked PR」替代——每个 PR 的 6 个 job 与 `ci-merge-gate` 全绿后，由编排器串行合并；其余 PR 随即同步最新 `main` 并重跑 CI，`strict` required check 保证合并时与最新 `main` 一致（该做法不等于 MQ 的自动组合验证，不提供 merge_group 上的组合执行）；
+- 规格 xlsx 已补回，但按约定不入库；
+- 平台 AO 已接入（daemon、`ao session claim-pr`、失败自动回传原 Worker 均已实证，见 §10.1）。
+
+**MQ 不可用的事实与决策（2026-11-05）**：
+
+- 事实：本仓库 `owner_type=User`（个人账号下的 PUBLIC 仓库）；GitHub 官方文档明确 Merge Queue **仅支持组织拥有的仓库**。
+- 验证：GraphQL、REST、ruleset 三条路径均实测不可用——`merge_queue` rule 的 POST 返回 `422`，未创建任何 ruleset。
+- 决策：由用户拍板**放弃 MQ**，改用**顺序合并 + stacked PR**：每个 PR 的 6 个 job 与 `ci-merge-gate` 全绿后由编排器串行合并；其余 PR 随后同步最新 `main` 重跑 CI，由 `strict` required check 保证与最新 `main` 一致。
+- 边界：该替代**不等价于** MQ 的自动组合验证（不在 `merge_group` 临时分支上组合执行），§3 的 `merge_group` 监听仅为将来组织仓库保留的规划表述。
