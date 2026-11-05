@@ -1,0 +1,201 @@
+name: pr-merge-gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_ENV: test
+  DATA_MODE: database
+  AI_MODE: fixture
+  DATABASE_URL: postgres://wealth:wealth@localhost:5432/wealth_demo
+  DATABASE_SSL: "false"
+  REQUIRE_MODEL: "true"
+  KNOWLEDGE_VECTOR_DIM: "1536"
+  MODEL_TIMEOUT_MS: "30000"
+
+jobs:
+  ci-static:
+    name: ci-static
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: full syntax check
+        run: |
+          set -e
+          for f in $(find src scripts public tests -name '*.js'); do
+            node --check "$f"
+          done
+
+  ci-unit-api:
+    name: ci-unit-api
+    runs-on: ubuntu-latest
+    env:
+      W1_DB_SMOKE: "false"
+      # Unit/API tests use mock model clients and assert real error paths
+      # (503 when the model is absent, dimension mismatch). They must not
+      # inherit the global AI_MODE=fixture, which would make the stub succeed.
+      AI_MODE: real
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: coverage report (informational, never blocks)
+        run: npm test -- --experimental-test-coverage > coverage-report.txt 2>&1 || true
+      - name: upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage-report.txt
+
+  ci-db-smoke:
+    name: ci-db-smoke
+    runs-on: ubuntu-latest
+    env:
+      W1_DB_SMOKE: "true"
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: wealth_demo
+          POSTGRES_USER: wealth
+          POSTGRES_PASSWORD: wealth
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wealth -d wealth_demo"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run migrate
+      - run: npm run seed
+      - name: re-run seed (idempotency)
+        run: npm run seed
+      - run: npm run test:integration
+      - name: upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-smoke-diagnostics
+          path: var/
+
+  ci-e2e-smoke:
+    name: ci-e2e-smoke
+    runs-on: ubuntu-latest
+    env:
+      W1_DB_SMOKE: "false"
+      E2E_PORT: "3100"
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: wealth_demo
+          POSTGRES_USER: wealth
+          POSTGRES_PASSWORD: wealth
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wealth -d wealth_demo"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run migrate
+      - run: npm run seed
+      - name: install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Playwright PC / mobile main flows
+        run: npm run test:e2e
+      - name: upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+
+  ci-ownership:
+    name: ci-ownership
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: validate changed files against declared agent ownership
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: node scripts/ci/check-ownership.mjs
+
+  ci-security:
+    name: ci-security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: production dependency audit (high/critical)
+        run: npm audit --omit=dev --audit-level=high
+      - name: tracked secret and ignore-rule scan
+        run: node scripts/ci/check-secrets.mjs
+
+  ci-merge-gate:
+    name: ci-merge-gate
+    runs-on: ubuntu-latest
+    needs: [ci-static, ci-unit-api, ci-db-smoke, ci-e2e-smoke, ci-ownership, ci-security]
+    if: always()
+    steps:
+      - name: aggregate required checks
+        run: |
+          echo "ci-static=${{ needs.ci-static.result }}"
+          echo "ci-unit-api=${{ needs.ci-unit-api.result }}"
+          echo "ci-db-smoke=${{ needs.ci-db-smoke.result }}"
+          echo "ci-e2e-smoke=${{ needs.ci-e2e-smoke.result }}"
+          echo "ci-ownership=${{ needs.ci-ownership.result }}"
+          echo "ci-security=${{ needs.ci-security.result }}"
+          if [ "${{ needs.ci-static.result }}" != "success" ] || [ "${{ needs.ci-unit-api.result }}" != "success" ] || [ "${{ needs.ci-db-smoke.result }}" != "success" ] || [ "${{ needs.ci-e2e-smoke.result }}" != "success" ] || [ "${{ needs.ci-ownership.result }}" != "success" ] || [ "${{ needs.ci-security.result }}" != "success" ]; then
+            echo "W1 merge gate failed"
+            exit 1
+          fi
+          echo "W1 merge gate passed"

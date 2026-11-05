@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="description" content="财富智服 AI 财富管理智能服务产品快速原型" />
+  <title>财富智服 · AI 财富管理智能服务</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='12' fill='%23245bdb'/%3E%3Cpath d='M14 31c6-14 12-14 20 0M16 24h16' fill='none' stroke='white' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="style.css?v=20260930c" />
+</head>
+<body>
+  <noscript>
+    <div style="max-width:520px;margin:48px auto;padding:24px;font-family:sans-serif;line-height:1.6">
+      请启用 JavaScript 后查看财富智服原型。
+    </div>
+  </noscript>
+  <main id="app"></main>
+  <dialog id="globalDialog"></dialog>
+  <script>
+    window.addEventListener('error', function (e) {
+      var app = document.getElementById('app');
+      if (!app || app.innerHTML) return;
+      app.innerHTML = '<div class="restricted" style="margin:48px auto;max-width:520px"><h2>页面未能加载</h2><p>原型脚本执行失败。请刷新，或在 dist 目录启动本地静态服务后重试。</p><p class="muted">' + String((e && e.message) || '') + '</p></div>';
+    });
+  </script>
+  <script src="requirements.js?v=20260930c"></script>
+  <script src="demo-data.js?v=20260930c"></script>
+  <script src="app.js?v=20260930c"></script>
+</body>
+</html>

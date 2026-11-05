@@ -1,0 +1,17 @@
+name: ci
+
+# PR 由 pr-merge-gate.yml 统一门禁；此处只保留 push 的快速语法/测试反馈。
+on:
+  push:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run check
