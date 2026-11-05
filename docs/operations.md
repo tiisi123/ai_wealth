@@ -35,3 +35,5 @@ Docker Desktop 引擎 API 在本机返回 500 时（`default` 与 `desktop-linux
 5. 通过 Nginx 地址进入 PC/手机前端。停止任一应用节点后，刷新同一 `session_id` 验证另一节点继续会话。
 
 如果模型或 Embedding API 超时、知识版本不匹配、数据来源过期或共享存储不可用，页面必须显示真实失败/过期状态。不要修改前端代码、重启节点或使用预置答案绕过问题。
+
+W1 canary Phase 0 wiring check.
