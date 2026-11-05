@@ -110,7 +110,7 @@ W1 使用真实 PostgreSQL 与 pgvector 扩展，数据集是固定 fixture，AI
 
    Playwright 已落地：`@playwright/test` 1.64.1（devDependency，`package-lock.json` 已更新）、`playwright.config.js`（pc / mobile 两个 project、webServer 自动拉起单实例应用、`/ready` 作为就绪探针）、`tests/e2e/{contract,mobile-flow,pc-flow}.spec.js`。覆盖契约标记与 fixture 模式、session 刷新恢复、409、证据不足 422、手机闭环（助手 → 配置 → 候选 → 比较 → 陪伴、撤权清理）、PC 闭环（研究 → 配置 → 候选 → 比较 → 保存、刷新保持）与演示桩标注。
 
-   **本地全绿**：语法检查、`npm test`（73/83）、`test:integration`（10/10）、`test:e2e`（15/15）与 `ci-ownership` 规则单测均已在真实 PostgreSQL + Chromium 上通过。**已实跑（2026-11-05）**：统一 commit `beaf08a` + tag `w1-baseline-2026-11-05` → push 分支 `ao/orchestrator/w1-baseline` → `gh` 建 PR #1 并挂 `baseline` label → 第一轮 `42049158170` 因 `ci-security` 扫到测试文件里的假 PEM 字面量而红，修复 commit `e3aff11` 触发 `synchronize` → 第二轮 `42049768111` **6 job + `ci-merge-gate` 全绿**（pgvector 10/10、Chromium + 15 E2E、覆盖率 artifact 已上传）→ PR #1 以 `--merge` 合并，`origin/main` = `5022fbe`。`gh` 位于 `C:\Program Files\GitHub CLI\gh.exe`（不在 PATH），已登录且账号为 ADMIN。**已知限制**：仓库为 PRIVATE，免费计划下分支保护 API 返回 403，`ci-merge-gate` 未能设为 required check，`ci-ownership` 目前只能报红、不能阻止合并；覆盖率按拍板仅报告、不设阈值。**仍未完成**：分支保护方案待定（改 public / 升级 Pro / 接受软约束）、AO canary 演练（依赖平台 AO 接入）。`ci-unit-api` 显式设 `AI_MODE=real`，避免全局 `AI_MODE=fixture` 污染使用 mock client 的单元测试。
+   **本地全绿**：语法检查、`npm test`（73/83）、`test:integration`（10/10）、`test:e2e`（15/15）与 `ci-ownership` 规则单测均已在真实 PostgreSQL + Chromium 上通过。**已实跑（2026-11-05）**：统一 commit `beaf08a` + tag `w1-baseline-2026-11-05` → push 分支 `ao/orchestrator/w1-baseline` → `gh` 建 PR #1 并挂 `baseline` label → 第一轮 `42049158170` 因 `ci-security` 扫到测试文件里的假 PEM 字面量而红，修复 commit `e3aff11` 触发 `synchronize` → 第二轮 `42049768111` **6 job + `ci-merge-gate` 全绿**（pgvector 10/10、Chromium + 15 E2E、覆盖率 artifact 已上传）→ PR #1 以 `--merge` 合并，`origin/main` = `5022fbe`。`gh` 位于 `C:\Program Files\GitHub CLI\gh.exe`（不在 PATH），已登录且账号为 ADMIN。**分支保护已启用（2026-11-05）**：因初始提交带入三份内部文档，仓库已删除并同名重建为 **PUBLIC**，旧 commit 经 API 验证返回 422 不可取回；`ci-merge-gate` 已设为 required check（`strict=true`、`enforce_admins=true`、线性历史、禁 force push），`ci-ownership` 现在能真正阻止越界 PR 合并。覆盖率仍仅报告、不设阈值。**仍未完成**：AO canary 演练（依赖平台 AO 接入）。`ci-unit-api` 显式设 `AI_MODE=real`，避免全局 `AI_MODE=fixture` 污染使用 mock client 的单元测试。
 
    PostgreSQL/pgvector 扩展已在 W1（migration 与业务表绑定）；真实 Embedding、知识索引、双节点、故障切换、性能和专业评测仍放到后续流水线。
 
@@ -130,6 +130,6 @@ W1 使用真实 PostgreSQL 与 pgvector 扩展，数据集是固定 fixture，AI
 
    **仍未完成**：演练本身尚未执行（依赖 GitHub Actions 实跑与平台 AO 接入），以及 `ci-security` / 覆盖率门禁。
 
-W1 的启动绿灯应是：**路由和操作清单冻结、基线已提交、API/会话契约冻结、fixture AI 可替换、所有按钮都有成功/失败/空状态路径、fixture E2E 主流程通过、AO canary 闭环通过**。当前已达成的是"fixture AI 可替换 + 真实 PG 数据底座 + DB 集成门禁 + 本地浏览器 E2E 全绿 + 基线已提交 + 页面与假闭环清单冻结"；**AO canary 演练一项未达成**；GitHub Actions 实跑已完成且门禁全绿。另有分支保护 403 限制待解决（见 P0 #6）。
+W1 的启动绿灯应是：**路由和操作清单冻结、基线已提交、API/会话契约冻结、fixture AI 可替换、所有按钮都有成功/失败/空状态路径、fixture E2E 主流程通过、AO canary 闭环通过**。当前已达成的是"fixture AI 可替换 + 真实 PG 数据底座 + DB 集成门禁 + 本地浏览器 E2E 全绿 + 基线已提交 + 页面与假闭环清单冻结"；**AO canary 演练一项未达成**；GitHub Actions 实跑已完成且门禁全绿。分支保护已在 PUBLIC 仓库上启用并可阻止合并。
 
 真实双节点、真实 AI、真实数据和生产级 CI 可以全部作为第二波，但不能在第二波之前把 W1 的 fixture 结果表述成真实模型或生产验收结论。
