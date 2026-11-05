@@ -1,4 +1,5 @@
 // W1 action domain: flow. Only this file may be edited by its owner.
+// W1 AO canary ownership drill (stage 1): comment-only change inside frontend-flow scope.
 // Branches are kept verbatim; dispatch preserves their original order.
 window.WealthActions.registerDomain(["go-route","m-candidate-reason","m-compare-add","m-contact","m-event","m-generate-allocation","m-holding-detail","m-qualification","m-quick","m-remind","m-save","m-save-compare","m-send","m-submit-care","mobile-menu","mobile-search","pc-menu","pc-menu-close"], function actionsFlow(action, el, productId, e){
   if(action==='m-generate-allocation'){
