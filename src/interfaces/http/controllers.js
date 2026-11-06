@@ -42,8 +42,8 @@ export function createControllers(container) {
   } = container;
 
   // GET /api/demo-data 与只读投影共用同一授权前置：有 session 取会话状态，否则按 DATA_MODE 规则。
-  async function resolvePrincipal(req) {
-    return resolveReadonlyPrincipal({ config, sessionService, query: req.query });
+  async function resolvePrincipal(req, options = {}) {
+    return resolveReadonlyPrincipal({ config, sessionService, query: req.query, ...options });
   }
 
   return {
@@ -89,9 +89,13 @@ export function createControllers(container) {
       const chunks = status.knowledge_version
         ? await knowledgeService.list({ limit: Math.min(Number(req.query.limit) || 50, 100), knowledgeVersion: status.knowledge_version })
         : [];
-      // 与 /api/demo-data 同一授权前置；未授权时只返回可公开的布尔标识与空列表。
-      const principal = await resolvePrincipal(req);
-      const snapshot = await dataService.getCustomerContext({ customerId: principal.customerId, authorized: principal.authorized });
+      // 知识片段本身是公开数据；只读投影按同一授权前置派生。
+      // 没有 session_id 时（浏览器 Boot 链即如此调用）按未授权处理：不读客户快照、不回显明细。
+      // 修复前这里会因 database 模式缺 session_id 直接 400，导致前端 waitForSession 超时而所有 E2E 失败。
+      const principal = await resolvePrincipal(req, { required: false });
+      const snapshot = principal.anonymous
+        ? { customer: null, products: [], holdings: [] }
+        : await dataService.getCustomerContext({ customerId: principal.customerId, authorized: principal.authorized });
       res.json({
         status,
         chunks,
@@ -121,13 +125,13 @@ export function createControllers(container) {
     // §8.1 #5：持仓收益/贡献/集中度只读计算入口。授权前置与 GET /api/demo-data 相同；
     // 未授权/空持仓由 portfolioService 返回 available=false，绝不返回 0 元冒充结果。
     calculatePortfolio: async (req, res) => {
-      const principal = await resolvePrincipal(req);
+      const principal = await resolvePrincipal(req, { required: true });
       const result = await portfolioService.calculate({ customerId: principal.customerId, authorized: principal.authorized });
       res.json({ ...result, api_version: config.API_VERSION });
     },
     // 独立保单/保障缺口只读投影（P-13 前端可直接取，无需读整份 demo-data）。
     insuranceCoverage: async (req, res) => {
-      const principal = await resolvePrincipal(req);
+      const principal = await resolvePrincipal(req, { required: true });
       const snapshot = await dataService.getCustomerContext({ customerId: principal.customerId, authorized: principal.authorized });
       res.json({
         ...projectInsuranceCoverage({ products: snapshot.products, authorized: principal.authorized, limit: req.query.limit }),

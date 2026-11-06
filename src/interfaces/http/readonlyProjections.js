@@ -16,17 +16,22 @@ import { ValidationError } from '../../platform/http/errors.js';
 // ---------------------------------------------------------------------------
 // 授权前置（与 controllers.demoData 同一规则，集中在一处以避免两处漂移）
 // ---------------------------------------------------------------------------
-export async function resolveReadonlyPrincipal({ config, sessionService, query, defaultCustomerId = 'customer-001' }) {
+// `required` 语义：
+// - required:true  —— 调用方承诺返回客户明细（如 /api/calculations/portfolio）：database 模式缺 session_id 直接 400；
+// - required:false —— 调用方只附带可公开标识（如 /api/knowledge 的投影）：database 模式缺 session_id 时
+//   按未授权处理，绝不回退到默认客户或 fixture 数据，也绝不回显客户明细。
+export async function resolveReadonlyPrincipal({ config, sessionService, query, defaultCustomerId = 'customer-001', required = false }) {
   if (query?.session_id) {
     const session = await sessionService.get(ensureSessionId(query.session_id));
-    return { customerId: session.customer_id, authorized: session.state.authorized === true, session };
+    return { customerId: session.customer_id, authorized: session.state.authorized === true, session, anonymous: false };
   }
+  if (!required) return { customerId: undefined, authorized: false, session: null, anonymous: true };
   if (config.DATA_MODE === 'database') {
     throw new ValidationError('生产数据查询必须携带有效 session_id');
   }
   // fixture 模式：与 GET /api/demo-data 一致，无 session 时按默认客户并以 authorized=true 取快照；
   // 服务层仍会用 snapshot.customer.authorized 二次校验。
-  return { customerId: defaultCustomerId, authorized: config.DATA_MODE === 'fixture', session: null };
+  return { customerId: defaultCustomerId, authorized: config.DATA_MODE === 'fixture', session: null, anonymous: false };
 }
 
 // 与 controllers.ensureUuid 同口径的 session_id 校验；保持本地实现以免循环依赖。
@@ -117,8 +122,10 @@ export function projectInsuranceCoverage({ products, authorized, limit }) {
     product_id: product.id,
     product_name: product.name || null,
     // 以下两项来自 products 的产品事实；缺失即 null，不由前端或服务端补值。
-    coverage: Number.isFinite(product.coverage) ? product.coverage : null,
-    annual_premium: Number.isFinite(product.annual_premium) ? product.annual_premium : null,
+    // database 模式下 pg 的 NUMERIC 以字符串返回（"4000000"），这里如实转成数值；
+    // 缺失或非数值仍为 null（显式空态），绝不补默认金额。
+    coverage: numericOrNull(product.coverage),
+    annual_premium: numericOrNull(product.annual_premium),
     sale_status: product.sale_status || null,
     source_id: product.source_id || null,
     source_timestamp: product.source_timestamp || null,
@@ -135,6 +142,13 @@ export function projectInsuranceCoverage({ products, authorized, limit }) {
     source: 'products(type=保险)',
     coverage_gap: gapUnavailable('no_gap_source')
   };
+}
+
+// 只做类型归一，不做任何兜底数值：null/undefined/''/非数字 → null。
+function numericOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function gapUnavailable(reason) {
