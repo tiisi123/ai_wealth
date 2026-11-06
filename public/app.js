@@ -333,18 +333,47 @@ function depositServerInput(){
   const p=productOf('deposit');
   if(!p) return null;
   // The contract accepts the rate as a percentage rate plus an explicit unit.
-  // The server snapshot stores it as a decimal (0.0215 = 2.15%); the conversion
-  // is unit bookkeeping, not a calculation, and rate_unit travels with the value.
-  const rate=p.annual_rate==null?null:Number(p.annual_rate)*100;
-  if(rate==null||!Number.isFinite(rate)) return null;
+  // The server snapshot stores it as a decimal (0.0215 = 2.15%); multiplying by
+  // 100 is unit bookkeeping for the request, not a business calculation, and
+  // rate_unit travels with the value. A value the page cannot express in that
+  // unit is NOT repaired here: the request is left to the server, whose own
+  // validation decides (VALIDATION_ERROR), and the page shows that error.
+  const raw=p.annual_rate;
+  if(raw===null||raw===undefined||raw==='') return null;
+  const rate=typeof raw==='number'&&Number.isFinite(raw)?raw*100:raw;
   return {principal:500000,annual_rate:rate,years:3,rate_unit:'percent',product_id:p.id};
 }
-
+function depositNumericProblem(){
+  const p=productOf('deposit');
+  if(!p||p.annual_rate===null||p.annual_rate===undefined||p.annual_rate==='') return '';
+  if(typeof p.annual_rate!=='number') return '服务端产品快照以字符串（NUMERIC）返回挂牌年利率，服务端只读计算拒绝该输入，因此未返回本息。页面不会在浏览器把字符串转换成数字来计算。';
+  return '';
+}
+// The endpoints read PostgreSQL data, where NUMERIC is returned as a string.
+// The page never converts those values to compute anything: a string amount is
+// rejected by the server's own calculation, so it is reported as the server's
+// failure instead of being repaired in the browser.
+function hasNumericAmount(holding){
+  return typeof holding?.amount==='number'&&Number.isFinite(holding.amount);
+}
+function portfolioNumericProblem(){
+  const rows=sessionApi()?.HOLDINGS||[];
+  if(!rows.length) return '';
+  const bad=rows.filter(row=>!hasNumericAmount(row));
+  const count=bad.length;
+  return `${count} 笔持仓的金额由数据库以字符串（NUMERIC）返回，服务端持仓计算拒绝该输入，因此未返回任何收益或集中度。页面不会在浏览器把它转换成数字来补算。`;
+}
 function ensureCalc(kind,params){
   const store=CALC_STORES[kind];
   if(!store) return null;
+  // Both endpoints resolve the caller's authorization from the shared session
+  // (session_id). Reading before the session adapter is connected would only
+  // produce a 400 "生产数据查询必须携带有效 session_id" that this page cannot
+  // fix, so the read waits for the session instead of inventing a result.
+  const sessionId=sessionApi()?.sessionId?.();
+  if(!sessionApi()?.isConnected?.()||!sessionId) return null;
   const endpoint=calcEndpoint(kind);
-  const query=calcQuery(params);
+  const query=calcQuery({...params,session_id:sessionId});
   const key=`${endpoint}?${query}`;
   if(store.status==='pending'||store.status==='ok'||store.status==='unsupported') return store.promise;
   if(store.status==='error'&&store.key===key) return store.promise;
@@ -387,15 +416,24 @@ function calcStateView(store,{what}){
     return {tone:'red',badge:'服务端计算暂不可用',lead:'<b>服务端计算暂不可用</b>',body:`<p>${esc(what)}尚未由服务端计算接口给出，系统不会在浏览器计算，也不会用任何硬编码金额或默认利率补位。</p><p class="muted">${esc(store.error||'')}</p>`};
   }
   if(store.status==='error'){
-    const code=store.data?.error?.code||'';
+    // The contract may report the failure as a top-level `status`
+    // (e.g. 422 UNSUPPORTED_RULE) or as `error{code,message}`.
+    const code=store.data?.error?.code||(store.data?.status&&store.data.status!=='MATCHED'?String(store.data.status):'');
     const message=store.data?.error?.message||store.error||'';
-    return {tone:'red',badge:code?`服务端错误 ${esc(code)}`:'服务端错误',lead:`<b>服务端计算失败${code?`（${esc(code)}）`:''}</b>`,body:`<p>${esc(what)}未获得服务端结果，本次不展示任何金额。</p><p class="muted">${esc(message)}</p>`};
+    const numericNote=store.kind==='portfolio'?portfolioNumericProblem():'';
+    return {tone:'red',badge:code?`服务端错误 ${esc(code)}`:'服务端错误',lead:`<b>服务端计算失败${code?`（${esc(code)}）`:''}</b>`,body:`<p>${esc(what)}未获得服务端结果，本次不展示任何金额。</p><p class="muted">${esc(message)}</p>${numericNote?`<p class="muted">${esc(numericNote)}</p>`:''}`};
   }
   return null;
 }
 const calcRow=(k,v)=>`<div class="stat-row"><span>${esc(k)}</span><b>${v==null||v===''?'—':esc(String(v))}</b></div>`;
+// pg sends NUMERIC as strings; tolerate both when printing a server value.
+const numOrNull=(v)=>{
+  if(v===null||v===undefined||v==='') return null;
+  const n=typeof v==='number'?v:Number(String(v).replace(/[¥￥,\s]/g,''));
+  return Number.isFinite(n)?n:null;
+};
 const calcIdRow=(id)=>`<div class="stat-row"><span>calculation_id</span><b><code>${esc(String(id||'—'))}</code></b></div>`;
-const ratioToPct=(v)=>v==null||!Number.isFinite(Number(v))?'—':`${(Number(v)*100).toFixed(2)}%`;
+const ratioToPct=(v)=>{ const n=numOrNull(v); return n==null?'—':`${(n*100).toFixed(2)}%`; };
 const cny=(v)=>v==null?'—':`¥${Number(v).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
 function pageArchitecture(){
@@ -482,7 +520,12 @@ function productFactsCard(p){
 // calculation endpoint. The input rate is the product's own annual_rate from
 // the server snapshot (transmitted with an explicit rate_unit), so no page
 // invents a default 2.15% and no amount is computed in the browser.
-function depositResultBody(result){
+// Response shape published by the contract: { status:'MATCHED', rule_id,
+// rule_version, calculation_id, result{ principal, annual_rate, years,
+// interest, maturity_amount, formula }, source{...} }.
+function depositResultBody(body){
+  const result=body?.result||{};
+  const source=body?.source||{};
   const lines=[
     calcRow('本金',cny(result.principal)),
     calcRow('年利率',ratioToPct(result.annual_rate)),
@@ -490,10 +533,11 @@ function depositResultBody(result){
     calcRow('利息',cny(result.interest)),
     calcRow('到期本息',cny(result.maturity_amount)),
     calcRow('公式',result.formula),
-    calcRow('利率来源',result.rate_source||result.source||'—'),
-    calcRow('数据时点',formatTime(result.source_timestamp||result.data_as_of)||'—')
+    calcRow('利率来源',source.source_id||source.description||source.name||'—'),
+    calcRow('数据时点',formatTime(source.source_timestamp||source.data_as_of)||'—'),
+    calcRow('规则版本',body?.rule_version)
   ];
-  return `<div class="list-row">${lines.join('')}${calcIdRow(result.calculation_id)}</div>`;
+  return `<div class="list-row">${lines.join('')}${calcIdRow(body?.calculation_id)}</div>`;
 }
 function depositCard(title,{emptyText,pendingText}){
   const dep=productOf('deposit');
@@ -513,9 +557,10 @@ function depositCard(title,{emptyText,pendingText}){
   }
   const result=store.data?.result||{};
   if(!result||result.maturity_amount==null||result.interest==null){
-    return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge('无挂牌利率','blue')}</div><div class="callout"><b>${esc(emptyText||'该期限暂无挂牌利率')}</b><p>服务端没有返回该期限的计息结果，本页不展示任何本息金额，也不套用默认利率。</p></div></div>`;
+    const note=depositNumericProblem();
+    return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge('无挂牌利率','blue')}</div><div class="callout"><b>${esc(emptyText||'该期限暂无挂牌利率')}</b><p>服务端没有返回该期限的计息结果，本页不展示任何本息金额，也不套用默认利率。</p>${note?`<p class="muted">${esc(note)}</p>`:''}</div></div>`;
   }
-  return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge('服务端计算结果','green')}</div>${depositResultBody(result)}<div class="callout warn">利率取自服务端产品快照（${esc(dep.name||'')} · 数据时点 ${esc(literalTime(dep.source_timestamp)||'—')}）；到期本息为单利测算，不构成收益承诺。</div></div>`;
+  return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge('服务端计算结果','green')}</div>${depositResultBody(store.data)}<div class="callout warn">利率取自服务端产品快照（${esc(dep.name||'')} · 数据时点 ${esc(literalTime(dep.source_timestamp)||'—')}）；到期本息为单利测算，不构成收益承诺。</div></div>`;
 }
 
 function productPage(type){
@@ -827,11 +872,6 @@ function mobileAllocation(){
 const PORTFOLIO_BASIS_LABEL={all_assets:'全资产口径',equity_assets:'权益资产口径'};
 const holdingIdOf=(holding)=>holding?.id;
 const holdingNameOf=(id)=>(sessionApi()?.HOLDINGS||[]).find(h=>holdingIdOf(h)===id)?.name||'';
-const numOrNull=(v)=>{
-  if(v===null||v===undefined||v==='') return null;
-  const n=typeof v==='number'?v:Number(String(v).replace(/[¥￥,\s]/g,''));
-  return Number.isFinite(n)?n:null;
-};
 function portfolioConcentrationRow(calc){
   const allBasis=calc.max_concentration_basis||'all_assets';
   const eq=calc.equity||{};
