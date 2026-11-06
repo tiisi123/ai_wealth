@@ -8,6 +8,7 @@ import { KnowledgeRepository } from './components/data-knowledge/infrastructure/
 import { KnowledgeService } from './components/data-knowledge/application/knowledgeService.js';
 import { DemoDataRepository } from './components/demo-data/infrastructure/demoDataRepository.js';
 import { DemoDataService } from './components/demo-data/application/demoDataService.js';
+import { PortfolioService } from './components/demo-data/application/portfolioService.js';
 import { SessionRepository } from './components/sessions/infrastructure/sessionRepository.js';
 import { SessionService } from './components/sessions/application/sessionService.js';
 import { OpenAICompatibleClient } from './components/ai-orchestration/infrastructure/openaiCompatibleClient.js';
@@ -37,6 +38,8 @@ export function createContainer(overrides = {}) {
   const knowledgeService = overrides.knowledgeService || new KnowledgeService({ repository: knowledgeRepository });
   const dataRepository = overrides.dataRepository || new DemoDataRepository({ db, dataMode: config.DATA_MODE });
   const dataService = overrides.dataService || new DemoDataService({ repository: dataRepository });
+  // §8.1 #5：持仓收益/贡献/集中度的只读计算（与证据包同一 portfolioCalculation 口径）。
+  const portfolioService = overrides.portfolioService || new PortfolioService({ dataService });
   const sessionRepository = overrides.sessionRepository || new SessionRepository({ db, dataMode: config.DATA_MODE });
   const sessionService = overrides.sessionService || new SessionService({ repository: sessionRepository, dataService, rulesService });
   const modelClient = overrides.modelClient || (config.AI_MODE === 'fixture'
@@ -45,5 +48,5 @@ export function createContainer(overrides = {}) {
   const aiOrchestrator = overrides.aiOrchestrator || new AiOrchestrator({ client: modelClient, dataService, knowledgeService, rulesService, sessionService, logger, db, config });
   const healthService = overrides.healthService || new HealthService({ config, db, documentStore, knowledgeService, rulesService, logger });
 
-  return { config, logger, db, documentStore, ruleRepository, rulesService, knowledgeRepository, knowledgeService, dataRepository, dataService, sessionRepository, sessionService, modelClient, aiOrchestrator, healthService };
+  return { config, logger, db, documentStore, ruleRepository, rulesService, knowledgeRepository, knowledgeService, dataRepository, dataService, portfolioService, sessionRepository, sessionService, modelClient, aiOrchestrator, healthService };
 }
