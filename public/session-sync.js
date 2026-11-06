@@ -60,6 +60,14 @@
     return body;
   }
 
+  // PostgreSQL returns DATE as a UTC-midnight Date, so the authoritative
+  // business date arrives as "2026-09-28T00:00:00.000Z". Normalise it back to
+  // the business-date format the contract and the UI copy use; never present
+  // the storage encoding as the data time point.
+  function businessDate(value) {
+    return typeof value === 'string' && value.length >= 10 ? value.slice(0, 10) : undefined;
+  }
+
   function applyRecord(record) {
     if (!record || !Number.isInteger(record.version) || record.version <= 0) {
       throw new Error('应用服务返回了无效会话版本');
@@ -67,7 +75,7 @@
     serverVersion = record.version;
     applyingServerState = true;
     try {
-      original.patch(Object.assign({}, record.state || {}, { _serverVersion: serverVersion }));
+      original.patch(Object.assign({}, record.state || {}, { asOf: businessDate(record.state?.asOf), _serverVersion: serverVersion }));
     } finally {
       applyingServerState = false;
     }

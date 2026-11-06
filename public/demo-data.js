@@ -2,6 +2,11 @@
 (function (global) {
   const AS_OF = '2026-09-28';
   const AS_OF_FULL = '2026-09-28 09:30';
+  // Same fixture identifiers as src/fixtures/demoData.js (DATA_MODE=database),
+  // so the pre-sync projection never shows a version the server does not own.
+  const DATA_VERSION = 'demo-2026-09-28-v1';
+  const KNOWLEDGE_VERSION = 'knowledge-demo-v1';
+  const RULE_VERSION = 'rules-demo-v1';
 
   const PRODUCTS = {
     wealth: {
@@ -126,6 +131,12 @@
       asOf: AS_OF,
       asOfFull: AS_OF_FULL,
       customerName: '林女士',
+      customerId: 'customer-001',
+      // Read-only identity/version fields must mirror the server's authoritative
+      // session values; session-sync.js replaces this projection once connected.
+      dataVersion: DATA_VERSION,
+      knowledgeVersion: KNOWLEDGE_VERSION,
+      ruleVersion: RULE_VERSION,
       authorized: true,
       qualified: false,
       lastQuestion: '',
