@@ -101,10 +101,11 @@ export function computePortfolio({ holdings, products, dataAsOf = null }) {
   // 任何一笔持仓缺少收益基准时整笔收益按不可用处理，不对缺失部分补 0。
   const returnAvailable = positions.every((position) => position.return_amount !== null);
   const estimatedTotalReturn = returnAvailable ? money(positions.reduce((sum, position) => sum + position.return_amount, 0)) : null;
-  const verifiedCostBase = returnAvailable
+  // 成本还原后的估算成本基数（同样只是估算，不是账务成本）。
+  const estimatedCostBase = returnAvailable
     ? positions.reduce((sum, position) => sum + position.amount - position.return_amount, 0)
     : null;
-  const totalReturnRate = returnAvailable && verifiedCostBase > 0 ? ratio(estimatedTotalReturn / verifiedCostBase) : null;
+  const totalReturnRate = returnAvailable && estimatedCostBase > 0 ? ratio(estimatedTotalReturn / estimatedCostBase) : null;
   if (returnAvailable && estimatedTotalReturn !== 0) {
     for (const position of positions) {
       position.contribution_to_total_return = ratio(position.return_amount / estimatedTotalReturn);
