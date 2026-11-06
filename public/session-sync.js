@@ -68,6 +68,16 @@
     return typeof value === 'string' && value.length >= 10 ? value.slice(0, 10) : undefined;
   }
 
+  // The fixture snapshot time point is stored in the repository's fixed calendar
+  // (+08:00), so it is formatted from its literal wall clock rather than from the
+  // viewer's time zone: a UTC-midnight DATE must not become "Sep 27" near the
+  // date line, and pages never print a storage encoding such as
+  // "2026-09-28T01:00:00.000Z".
+  function businessDateTime(value) {
+    const match = typeof value === 'string' && value.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+    return match ? `${match[1]} ${match[2]}` : undefined;
+  }
+
   function applyRecord(record) {
     if (!record || !Number.isInteger(record.version) || record.version <= 0) {
       throw new Error('应用服务返回了无效会话版本');
@@ -75,7 +85,9 @@
     serverVersion = record.version;
     applyingServerState = true;
     try {
-      original.patch(Object.assign({}, record.state || {}, { asOf: businessDate(record.state?.asOf), _serverVersion: serverVersion }));
+      const asOfDate = businessDate(record.state?.asOf);
+      const asOfFull = businessDateTime(record.state?.asOf) ?? businessDateTime(original.get?.()?.asOfFull);
+      original.patch(Object.assign({}, record.state || {}, { asOf: asOfDate, asOfFull, _serverVersion: serverVersion }));
     } finally {
       applyingServerState = false;
     }
@@ -96,7 +108,7 @@
       const product = products.find((item) => item.id === holding.product_id);
       return { ...holding, name: product?.name || holding.product_id, type: product?.type || '产品', amount: `¥${Number(holding.amount || 0).toLocaleString('zh-CN')}`, ret: holding.return_rate == null ? '—' : `${(Number(holding.return_rate) * 100).toFixed(2)}%` };
     });
-    original.replaceData?.({ products, holdings, asOf: body.data_as_of, asOfFull: body.data_as_of_full });
+    original.replaceData?.({ products, holdings, asOf: businessDate(body.data_as_of), asOfFull: businessDateTime(body.data_as_of_full) });
     emit('wealth-data-ready', { dataVersion: body.data_version });
   }
 
@@ -124,15 +136,67 @@
     emit('wealth-session-sync-error', { error, kind });
   }
 
+  // Service health for pages that must not show default numbers (P-01).
+  // /ready answers 503 when a dependency is not ready, and that payload still
+  // carries the real per-check results, so it is read as data rather than an
+  // error. Only transport failures leave a section unreported.
+  const serviceStatus = { status: 'pending', health: null, ready: null, error: '' };
+  let servicePromise = null;
+
+  async function readServiceHealth() {
+    try {
+      const settled = await Promise.allSettled([request('/api/health'), request('/ready')]);
+      const health = settled[0].status === 'fulfilled' ? settled[0].value : null;
+      const ready = settled[1].status === 'fulfilled'
+        ? settled[1].value
+        : (settled[1].reason?.body && typeof settled[1].reason.body === 'object' ? settled[1].reason.body : null);
+      const failures = [];
+      if (!health) failures.push(`/api/health：${settled[0].reason?.message || '无响应'}`);
+      if (!ready) failures.push(`/ready：${settled[1].reason?.message || '无响应'}`);
+      serviceStatus.status = failures.length ? 'error' : 'ok';
+      serviceStatus.health = health;
+      serviceStatus.ready = ready;
+      serviceStatus.error = failures.join('；');
+      serviceStatus.readAt = new Date().toISOString();
+    } catch (error) {
+      serviceStatus.status = 'error';
+      serviceStatus.health = null;
+      serviceStatus.ready = null;
+      serviceStatus.error = error?.message || '服务状态读取失败';
+    }
+    emit('wealth-service-status', { status: serviceStatus.status });
+    return serviceStatus;
+  }
+
+  // De-duplicated: a re-render may ask again, but concurrent callers share one
+  // pair of requests, and the previous result is reused until refresh() runs.
+  function ensureServiceHealth() {
+    if (servicePromise) return servicePromise;
+    servicePromise = readServiceHealth().finally(() => { servicePromise = null; });
+    return servicePromise;
+  }
+
+  function refreshServiceHealth() {
+    serviceStatus.status = 'pending';
+    return ensureServiceHealth();
+  }
+
   function createOrLoad() {
     if (initializationPromise) return initializationPromise;
     const expectedLifecycle = lifecycle;
     initializationPromise = (async () => {
       try {
         const health = await request('/api/health');
+        // Publish the real /api/health payload before the contract check so the
+        // control tower never falls back to default numbers, even when the
+        // contract itself is the failing dependency.
+        serviceStatus.health = health;
+        serviceStatus.status = 'ok';
+        emit('wealth-service-status', { status: 'ok' });
         if (health.frontend_contract_version !== EXPECTED_FRONTEND_CONTRACT || health.api_version !== 'v1') {
           const error = new Error('前端与应用服务契约版本不匹配');
           error.code = 'FRONTEND_CONTRACT_MISMATCH';
+          serviceStatus.status = 'error';
           throw error;
         }
         let body;
@@ -157,9 +221,19 @@
         await Promise.all([loadData(expectedLifecycle, sessionId), loadKnowledge(expectedLifecycle, sessionId)]);
         connected = true;
         emit('wealth-session-ready', { sessionId, version: serverVersion });
+        // /ready is read after the session is usable so the 7 checks can never
+        // delay the shared session; a real 503 is kept as a dependency result.
+        void ensureServiceHealth();
         return record;
       } catch (error) {
-        if (error.code !== 'STALE_REQUEST') reportError(error, 'initialization');
+        if (error.code !== 'STALE_REQUEST') {
+          reportError(error, 'initialization');
+          if (!serviceStatus.health) {
+            serviceStatus.status = 'error';
+            serviceStatus.error = error?.message || '服务状态读取失败';
+            emit('wealth-service-status', { status: 'error' });
+          }
+        }
         throw error;
       }
     })();
@@ -263,6 +337,28 @@
       await syncing;
     },
     async health() { return request('/api/health'); },
+    data: serviceStatus,
+    ensureServiceHealth,
+    async refreshServiceHealth() { return refreshServiceHealth(); },
+    products() {
+      return Object.values(original?.PRODUCTS || {});
+    },
+    holdingByProduct() {
+      const map = {};
+      for (const holding of original?.HOLDINGS || []) {
+        if (holding?.id) map[holding.id] = holding;
+      }
+      return map;
+    },
+    knowledge() {
+      const state = original?.get?.() || {};
+      return {
+        status: state._knowledgeStatus || null,
+        documents: state._knowledgeDocuments || [],
+        chunks: state._knowledgeChunks || [],
+        version: state._knowledgeStatus?.knowledge_version || null
+      };
+    },
     async getSession() {
       await createOrLoad();
       const expectedLifecycle = lifecycle;
