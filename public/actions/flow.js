@@ -1,6 +1,42 @@
 // W1 action domain: flow. Only this file may be edited by its owner.
 // Branches are kept verbatim; dispatch preserves their original order.
-window.WealthActions.registerDomain(["go-route","m-candidate-reason","m-compare-add","m-contact","m-event","m-generate-allocation","m-holding-detail","m-qualification","m-quick","m-remind","m-save","m-save-compare","m-send","m-submit-care","mobile-menu","mobile-search","pc-menu","pc-menu-close"], function actionsFlow(action, el, productId, e){
+
+// P-12：产品事实的服务端权威来源（products[] 与 holdings[] 同源自 GET /api/demo-data）。
+// 该接口在 DATA_MODE=database 下不带 session_id 会直接 400，因此先确保共享会话已建立。
+// 读取失败一律抛出，由调用方落到可见失败态——不得静默放行，也不得静默丢弃产品。
+async function loadServerProductFacts(){
+  await window.WealthApi.getSession();
+  const sessionId=window.WealthApi.sessionId;
+  if(!sessionId) throw new Error('共享会话未建立，无法读取产品数据');
+  const response=await fetch(`/api/demo-data?session_id=${encodeURIComponent(sessionId)}`,{headers:{accept:'application/json'}});
+  const body=await response.json().catch(()=>({}));
+  if(!response.ok) throw new Error(body?.error?.message||`共享产品数据请求失败（${response.status}）`);
+  if(!Array.isArray(body.products)) throw new Error('共享产品数据未返回产品清单');
+  return { products: body.products, holdings: Array.isArray(body.holdings)?body.holdings:[] };
+}
+
+// P-12：加入比较共用链路。不可用产品不写入 compareSet，并给出可见说明；
+// 服务端 PATCH 仍会复核产品存在性（sessionService 的 known 校验），这里是同口径前置拦截。
+function addToCompare(id, label){
+  if(!id){ showActionError('缺少真实产品 ID，未加入比较'); return; }
+  void (async()=>{
+    try{
+      const facts=await loadServerProductFacts();
+      const known=new Set(facts.products.map(product=>product.id));
+      if(!known.has(id)){
+        showActionError(`共享产品库中没有产品 ${id}，${label}未写入比较集`);
+        return;
+      }
+      const added=sessionApi()?.addCompare(id);
+      if(!Array.isArray(added) || !added.includes(id)) throw new Error('比较集未按预期更新为服务端状态');
+      await window.WealthApi.whenSynced();
+      closeDialog();
+      go('m/compare');
+    }catch(error){ showActionError(error); }
+  })();
+}
+
+window.WealthActions.registerDomain(["go-route","m-candidate-reason","m-compare-add","m-contact","m-deposit-compare","m-event","m-generate-allocation","m-holding-detail","m-qualification","m-quick","m-remind","m-save","m-save-compare","m-send","m-submit-care","mobile-menu","mobile-search","pc-menu","pc-menu-close"], function actionsFlow(action, el, productId, e){
   if(action==='m-generate-allocation'){
     activeAiRequestToken+=1;
     const g=readAllocGoal();
@@ -33,38 +69,52 @@ window.WealthActions.registerDomain(["go-route","m-candidate-reason","m-compare-
     },'m-candidate-reason',{product_ids:[id]});
     return;
   }
-  if(action==='m-compare-add'){
-    const id=productId||window.__pendingProduct||'';
-    if(!id){ showActionError('缺少真实产品 ID，未加入比较'); return; }
-    void (async()=>{
-      try{
-        await window.WealthApi.getSession();
-        sessionApi()?.addCompare(id);
-        await window.WealthApi.whenSynced();
-        closeDialog();
-        go('m/compare');
-      }catch(error){ showActionError(error); }
-    })();
-    return;
-  }
-  if(action==='m-save'){
-    const id=productId||window.__pendingProduct||'';
-    if(!id){ showActionError('缺少真实产品 ID，未加入比较'); return; }
-    void (async()=>{
-      try{
-        await window.WealthApi.getSession();
-        sessionApi()?.addCompare(id);
-        await window.WealthApi.whenSynced();
-        closeDialog();
-        go('m/compare');
-      }catch(error){ showActionError(error); }
-    })();
+  if(action==='m-compare-add'){ addToCompare(productId||window.__pendingProduct||'', '该产品'); return; }
+  if(action==='m-save'){ addToCompare(productId||window.__pendingProduct||'', '该产品'); return; }
+  // P-04：到期本息必须由服务端确定性计算给出。deposit-interest-simple 已有实现，但
+  // businessRulesService.executeDeterministic() 没有任何调用方，也没有 2/3/5 年挂牌利率
+  // 与活期利率的服务端来源；m/deposit 的 1/3/5 年常量与 pc/product-deposit 的 DCD 挂牌
+  // 利率 1.90% 互相矛盾，同一产品利率没有唯一真值。因此浏览器不再自算本息、也不套用
+  // 默认利率，而是落到显式的「需服务端权威结果」失败态；服务端计算入口就绪后在此接线。
+  if(action==='m-deposit-compare'){
+    showActionError('存款到期本息需由服务端权威结果给出（复用 deposit-interest-simple，统一百分数/小数单位）。当前服务端计算入口尚未接入，系统没有在浏览器计算或展示到期本息与提前支取金额。');
     return;
   }
   if(action==='m-save-compare'){
     const ids=realProductIds(session().compareSet);
     if(ids.length<2||ids.length>3){ openLanding('compare-needed'); return; }
-    void runBusinessCommand('save_comparison',{product_ids:ids},'m-save-compare');
+    void (async()=>{
+      let body;
+      try{
+        body=await window.WealthApi.command('save_comparison',{product_ids:ids});
+      }catch(error){ showActionError(error); return; }
+      const saved=Array.isArray(body?.result?.product_ids)?body.result.product_ids:[];
+      if(body?.result?.status!=='APPLIED' || saved.length!==ids.length || saved.some(id=>!ids.includes(id))){
+        showActionError('应用服务未确认保存的比较结果，未展示成功状态');
+        return;
+      }
+      // H-03：比较结论改为可由「服务端已保存的比较集 + 当前产品事实」复算的表述，
+      // 不再陈述未经计算的因果关系。任何一行缺值都显式标为无数据，不参与结论推导。
+      const products=saved.map(id=>productOf(id)||{});
+      const missing=products.flatMap(p=>['ret','drawdown']
+        .filter(key=>p[key]==null || p[key]==='' || p[key]==='—')
+        .map(key=>`${p.name||p.id}·${key==='ret'?'区间收益':'最大回撤'}`));
+      const order={R1:1,R2:2,R3:3,R4:4,R5:5};
+      const tiers=[...new Set(products.map(p=>p.risk).filter(r=>order[r]))];
+      const lines=[
+        '口径说明（可由上方表格逐项复算，不构成排名或推荐）：',
+        `· 比较集：${saved.join(' / ')}，已由应用服务保存，数据版本 ${body.result.data_version||'未返回'}。`,
+        missing.length
+          ? `· 缺失值（无数据，不参与任何比较）：${missing.join('、')}。`
+          : '· 区间收益与最大回撤均已取到，可与上方表格逐项对照。',
+        tiers.length===1
+          ? `· 风险等级：全部为 ${tiers[0]} 同档，区间收益与最大回撤可直接并列对照。`
+          : (tiers.length>1
+            ? `· 风险等级：${tiers.join(' / ')} 跨档，区间收益与最大回撤属于不同风险档产品，口径不同不可直接排名。`
+            : '· 风险等级：未返回可比较的风险等级，区间收益与最大回撤不参与横向排名。')
+      ];
+      openLanding('m-save-compare',{summary:lines.join('')});
+    })();
     return;
   }
   if(action==='m-holding-detail'){
