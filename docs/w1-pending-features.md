@@ -12,11 +12,11 @@
 | DEMO 验收标准 | 架构文档 V2.3 第 11 章 A01–A35，是 DEMO 的通过条件；本清单的「职责页」与「关联 A 项」只做交叉索引 |
 | 台账 | 架构文档附录 A（R2–R62 逐条承载与判定归属），本清单不复制其表格 |
 | 本文性质 | 需求侧完成条件与验收归属；**不含测试代码**，不新增运行页面，不改 `CONTEXT.md`、`README.md`、架构文档、`tests/`、`src/`、`public/`、`scripts/`、`.github/`、`package.json` |
-| 基线 | `origin/main` = `d0b7620`（波次 1 合并后；本清单首版写于基线 `53eb19c`，已由 §0.3 统一校正）。所列「当前演示态」均为该基线上 `public/app.js`、`public/actions/*.js` 与 `src/` 的**代码事实**，不是人工观感描述 |
+| 基线 | `origin/main` = `cf07b1b`（波次 2 合并后；本清单首版写于基线 `53eb19c`，波次 1 后校正为 `d0b7620`，波次 3 起校正为 `cf07b1b`，均见 §0.3 / §0.4）。所列「当前演示态」均为该基线上 `public/app.js`、`public/actions/*.js` 与 `src/` 的**代码事实**，不是人工观感描述 |
 
 ### 0.3 基线校正与波次 1 收工登记（2026-11-05 复核）
 
-波次 1 已合并 4 个加固项，基线由 `53eb19c` 推进到 **`d0b7620`**。本清单凡引用基线处一律记为 `d0b7620`，并把下列已修项在对应条目上标注「**已收工 · PR#**」，**原条目不删除**（保留追溯）。
+波次 1 已合并 4 个加固项，基线由 `53eb19c` 推进到 **`d0b7620`**（波次 2 合并后已进一步推进到 `cf07b1b`，见 §0.4）。本清单凡引用基线处一律记为当前基线，并把下列已修项在对应条目上标注「**已收工 · PR#**」，**原条目不删除**（保留追溯）。
 
 | PR | 类型 | 收工项（对应本清单条目） |
 |---|---|---|
@@ -25,7 +25,23 @@
 | #8 | docs（`docs`） | 本清单首版入库（即本文，写于波次 1 之前的旧基线） |
 | #9 | backend（`backend`） | A06 候选资格解析「12 个月」等持有期、定期存款按名义期限、一年内流动性需求排除满 12 个月持有；A07 确定性比较口径与 `comparable/incomparable_reason/missing_product_ids`；A23 `rule_id`+`rule_version` 精确匹配、拒绝模型动作与排名；A17/A19 规则与计算证据入包；A18 规则执行前复核会话版本。**H-06 事实性误判即由本 PR 暴露**（见 §4 H-06） |
 
-基线校正要点：波次 1 之前的旧基线（`53eb19c`）上的「当前演示态」凡与 `d0b7620` 不同，以本节与各条目「**基线校正**」行为准；未标注者表示两版一致。
+基线校正要点：波次 1 之前的旧基线（`53eb19c`）上的「当前演示态」凡与当前基线 `cf07b1b` 不同，以本节与各条目「**基线校正**」行为准；未标注者表示两版一致。
+
+### 0.4 波次 2 收工登记与基线推进（2026-11-05，基线 `cf07b1b`）
+
+波次 2 已合并 4 个 PR，基线由 `d0b7620` 推进到 **`cf07b1b`**。本节只登记「服务端已具备的前提」与「已撤回的旧判断」，**不把任何一个 P/H 条目标记为整体收工过**；条目整体闭环仍需页面侧消费与三态用例，登记于 §1.1。
+
+| PR | 类型（owner） | 收工项 / 前提（对应本清单条目） |
+|---|---|---|
+| #10 | docs（`docs`） | 本清单的基线校正、H-06 事实性撤回与缺口基数重算入库。**冻结集合未变** |
+| #11 | backend（`backend`） | **P-04**：`BusinessRulesService.calculateDeposit()` 只读入口落地（`rate_unit` `decimal`/`percent`、单位守卫、`calculation_id`、`rule_version` 精确匹配、结果二次复算）；**P-15**：`PortfolioService.calculate()` 只读门面与共享 `computePortfolio()` 落地（`all_assets` / `equity_assets` 双分母、`holding_return` 标记 `estimated`、`unauthorized`/`no_holdings` 不返回假 0）。两项均为 service 层，**尚未暴露 HTTP 端点**，冻结集合未变（36/19/7/11 不变） |
+| #12 | frontend-flow（`frontend-flow`） | **P-04**：`m-deposit-compare` 停止浏览器自算并落到显式「需服务端权威结果」失败态（**删假值，未接线**）；**P-12**：`m-save`/`m-compare-add` 改经 `/api/demo-data` 校验 `product_id` 存在后才写 `compareSet`；**H-03**：`save_comparison` 结果须服务端确认 `APPLIED` 才显示成功，比较结论改为可由已保存比较集复算的表述。**只删不补**，页面尚未改接服务端读数 |
+| #13 | frontend-lead（`frontend-lead`） | **P-01 / P-11**：控制台 KPI 改由真实端点驱动、移除落地页假数据项。冻结集合未变 |
+
+基线校正要点（`cf07b1b`）：
+
+- P-04 / P-15 的「服务端计算不存在」「只剩页面硬编码」表述已过时——计算 service 已存在，**缺的是 HTTP 暴露与页面消费**；详见 §3 P-04、P-15 条目内的「波次 2 / 波次 3 校正」行。
+- 波次 2 的 #12、#13 大多属**删假数据 / 显式拦截**，不等于条目达标；§1.1 的缺口基数只在页面读数确实改接服务端事实时才减，不因「删掉硬编码」「改成失败提示」而虚减。
 
 ### 0.1 真实模型与 fixture 的表述边界
 
@@ -54,8 +70,8 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 | 3 | `pc/product-fund` | PC 产品洞察 | P-02 | `catalog.fund` 硬编码 3 只基金，非 `/api/demo-data` | 产品事实无服务端来源 | A02、A08、A19 |
 | 4 | `pc/product-insurance` | PC 产品洞察 | P-03 | `catalog.insurance` 硬编码 | 同上；「我的保单」「理赔」「通识」三板块静态 | A02 |
 | 5 | `pc/product-wealth` | PC 产品洞察 | P-03 | `catalog.wealth` 硬编码 | 同上 | A02 |
-| 6 | `pc/product-deposit` | PC 产品洞察 | P-04 | `catalog.deposit` 硬编码；测算用前端常量 | 利率/本金未经服务端计算 | A08 |
-| 7 | `pc/product-private` | PC 产品洞察 | P-05 | 整页为 `pageProductPrivateRestricted()` 受限提示 | 无认定状态、无产品数据 | A10、A13 |
+| 6 | `pc/product-deposit` | PC 产品洞察 | P-04 | `catalog.deposit` 硬编码；测算用前端常量。**已推进 · 波次 3**：服务端 `calculateDeposit()` 已存在，HTTP 只读端点由 contract PR 暴露 | 利率/本金未经服务端计算；`pc/product-deposit` 仍为前端常量，待改接只读端点 | A08 |
+| 7 | `pc/product-private` | PC 产品洞察 | P-05 | 整页为 `pageProductPrivateRestricted()` 受限提示。**已推进 · 波次 3**：认定状态与受限产品定为只读派生投影（不进会话状态） | 无认定状态、无产品数据；页面尚未消费派生投影 | A10、A13 |
 | 8 | `pc/candidates` | PC 产品洞察 | H-02 | 候选来自 `session.candidates`；**变更**：`d0b7620` 起候选资格/理由/排序由 `candidateCalculation` 给出（`reason`、`constraints`、`holding_months`），`match` 已恒为 `—`（`session-sync.js` 覆盖产品字段） | 无候选时缺**专用引导**空态（现仅表体缺省行）；`score` 仍缺服务端字段，排序值不可复算 | A06、A48 |
 | 9 | `pc/compare` | PC 产品洞察 | H-03 | 比较集来自 `session.compareSet`；**变更**：`comparisonBasis`/`compareBasis()` 已产出确定性口径（`type`+`risk`+`benchmark`）与 `comparable`/`incomparable_reason` | 前端未消费该口径：`m/compare` 固定结论文案仍在、口径切换只改行标签（见 H-03） | A07 |
 | 10 | `pc/supply` | PC 财富投研 | P-06 | 行数组与 `metric()` 硬编码 | 无 `/api/demo-data` 来源 | A02、A13 |
@@ -69,20 +85,20 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 | 18 | `pc/result` | PC 公共结果 | P-11 | `landingSpec` 53 条映射；含假数据项 | 注销了假成功，但版本/权限为空 | A11、A13 |
 | 19 | `m/assistant` | 手机主流程 | H-05 | `assistant_qa` 真实 | 「2 条持仓提醒」硬编码；无多轮 | A14、A14b、A03 |
 | 20 | `m/fund` | 手机主流程 | P-12 | 4 条基金硬编码；仅 A500 可诊基 | 硬编码产品无法映射 `product_id` | A08、A19、A10 |
-| 21 | `m/insurance` | 手机主流程 | P-13 | 整页硬编码；`m-coverage`/`m-policy` 只开固定弹窗 | 无保单数据源 | A08、A10 |
+| 21 | `m/insurance` | 手机主流程 | P-13 | 整页硬编码；`m-coverage`/`m-policy` 只开固定弹窗。**已推进 · 波次 3**：保单/缺口定为只读派生投影，无来源时显式空态、不伪造 | 无保单数据源；派生投影覆盖面有限（只含产品事实可确定字段） | A08、A10 |
 | 22 | `m/wealth` | 手机主流程 | P-14 | `wealthCard()` 来自 `productOf`（真实产品） | `wealth`/`cash` 无知识片段 | A08、A10 |
 | 23 | `m/deposit` | 手机主流程 | P-04 | 到期本息由前端 `updateDeposit()` 计算 | 计算未由服务端权威 | A08 |
 | 24 | `m/private` | 手机主流程 | P-05 | 受限页 + `m-contact`（`contactTodo`） | 无认定状态与未认定/已认定分叉 | A10、A13 |
-| 25 | `m/allocation` | 手机主流程 | H-06 | `rule_match` → `generate_allocation` → `generate_candidates` 已真实闭环（`d0b7620` 实测默认目标产出 `allocation-balanced-r3`） | 两类失败态（`UNSUPPORTED_RULE`、`NEED_CONFIRMATION`）**共用** `rule-confirmation` 结果页；`NEED_CONFIRMATION` 在表单恒有默认值时不可达 | A04、A05、A24 |
-| 26 | `m/holdings` | 手机主流程 | P-15 | 合计来自服务端；持有收益与集中度硬编码 | 收益/贡献未由服务端计算（`d0b7620` 已将 `portfolio_calculation` 嵌入持仓结构化事实，可作 P-15 接入前提，**页面尚未消费**） | A08、A10 |
-| 27 | `m/candidates` | 手机主流程 | P-16 | 候选来自服务端；「适配你的资金期限」硬编码；**变更**：`d0b7620` 起 `candidateCalculation.reasons[]` 已带 `constraints` 与 `holding_months`，文案与排序同源已具备前提 | 页面固定文案未改用 `reasons[].constraints` | A06、A48 |
+| 25 | `m/allocation` | 手机主流程 | H-06 | `rule_match` → `generate_allocation` → `generate_candidates` 已真实闭环（`cf07b1b` 实测默认目标产出 `allocation-balanced-r3`） | 两类失败态（`UNSUPPORTED_RULE`、`NEED_CONFIRMATION`）**共用** `rule-confirmation` 结果页；`NEED_CONFIRMATION` 在表单恒有默认值时不可达 | A04、A05、A24 |
+| 26 | `m/holdings` | 手机主流程 | P-15 | 合计来自服务端；持有收益与集中度硬编码。**已推进 · 波次 3**：服务端 `PortfolioService.calculate()` 只读门面已就绪（双分母、`estimated` 收益），HTTP 端点由 contract PR 暴露 | 收益/贡献改接服务端只读投影（`cf07b1b` 已将 `portfolio_calculation` 嵌入持仓结构化事实，**页面尚未消费**） | A08、A10 |
+| 27 | `m/candidates` | 手机主流程 | P-16 | 候选来自服务端；「适配你的资金期限」硬编码；**变更**：`cf07b1b` 起 `candidateCalculation.reasons[]` 已带 `constraints` 与 `holding_months`（`d0b7620` 引入，波次 2 前已生效），文案与排序同源已具备前提 | 页面固定文案未改用 `reasons[].constraints` | A06、A48 |
 | 28 | `m/compare` | 手机主流程 | H-03 | 同上；「历史收益更高…」为固定文案 | 固定结论文本 | A07、A45 |
 | 29 | `m/companion` | 手机主流程 | P-17 | `+0.86%`、`68%`、`R3` 硬编码 | 复盘数字无来源 | A08、A11、A50 |
 | 30 | `m/result` | 手机公共结果 | P-11 | 复用 `landingBody()` | 同 P-11 | A11 |
 
 合计：**P 类 17 页**（P-01…P-17），**H 类 13 页**（H-01…H-06，其中 H-03 同时覆盖 `pc/compare`、`m/compare`）。`pc/result` 与 `m/result` 共用 P-11。
 
-### 1.1 校正后的缺口基数（基线 `d0b7620`，2026-11-05 重算）
+### 1.1 校正后的缺口基数（基线 `cf07b1b`，2026-11-05 波次 2 后重算）
 
 > 本表**替代**任何旧一轮使用的「缺口条目数」。后续 Worker 排期只认本表；若与本表不一致，先按 §0.3 复核再改本表。
 
@@ -93,6 +109,13 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 | 已收工（单项缺口，见下） | 2 | 1 | **3** |
 | 剩余待办条目 | 17 | 6 | **23** |
 | 剩余待办单项缺口 | 31 | 14 | **45** |
+| ├ 其中：已被只读端点/派生投影覆盖口径（波次 3 登记，**页面未接线前仍计入待办**） | 5 | 2 | **7**（见下行明细） |
+| ├ 其中：明确滞后且需状态契约 owner 批准的缺口（§8.1 第 3、7 项） | 1 | 0 | **1** |
+| └ 其中：纯页面侧、无契约前置的缺口 | 27 | 12 | **39** |
+
+**「已被只读端点/派生投影覆盖口径」的 7 项明细（仍计入待办）**：P-04 的 `pc/product-deposit`（`m/` 侧见下方 H 类部分；`m-deposit-compare` 是同一页内的动作，不单列）、P-15 的 `m/holdings`、P-05 的 `pc/product-private` 各 1 项 = 4 项；H 类为 `pc/product-deposit`/`m/deposit`（P-04）与 `pc/product-private`（P-05）被 `pc/` 与 `m/` 双页覆盖的部分，合计 2 项。**P 5 + H 2 = 7 项，与上行合计一致。P-01 的 `/api/health` 与 `/ready` 未接入不在此 7 项内**（它属于状态端点接线，排期另计）。这些数字只表示「口径已覆盖」，**不表示已收工**。
+
+**波次 3 计数口径（不得虚报）**：波次 3 只落地「服务端已有计算的只读暴露 + 文档口径」，**不改变任何页面的运行行为**，因此上表前四行的条目/缺口总数与波次 2 后一致（23 条目 / 45 单项缺口待办，`0 / 30` 页达标）。新增的三个细分行只是把 45 项按「阻塞性质」拆开，便于排期，**不得**把「已被只读端点覆盖」读成「已收工」：页面改接服务端读数并交齐三态用例之前，该项仍计待办。已在等待页面接线的四项为 P-04（存款只读端点）、P-15（持仓只读投影）、P-05（认定状态只读派生）、P-13（保单只读派生）。#12 删除前端自算存款本息、#13 移除落地页假数据项属**删假值**，未用服务端真实数据替换，故不冲减任何缺口。
 
 **已收工单项缺口（「已收工 · PR#」登记，不代表条目整体闭环）**
 
@@ -107,9 +130,9 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 | 口径 | 当前值 | 构成 | 不得由此宣称 |
 |---|---|---|---|
 | ①「主链路闭环已通」 | **30 / 30 路由可达**；手机与 PC 两条闭环 E2E 全绿（见下） | 路由白名单 30 个全部有渲染与入口；`CONTEXT.md` 冻结的手机（助手→持仓→诊断→配置→候选→比较→陪伴）与 PC（工作台/研究→产品解释→候选→比较→保存）两条闭环均已端到端跑通 | 不表示 30 个页面「逐页达标」；静态页与硬编码 KPI 仍存在（P 类 17 页） |
-| ②「30 页逐页达标」 | **0 / 30 页达标**（23 / 23 条目待办，45 / 48 单项缺口待办） | 需每个条目在 §2 模板下交齐成功/失败/空三态与真实服务端来源 | 不表示主链路未通；①与②互不替代 |
+| ②「30 页逐页达标」 | **0 / 30 页达标**（23 / 23 条目待办，45 / 48 单项缺口待办；其中 7 项的口径已由只读端点/派生投影覆盖，仅差页面接线） | 需每个条目在 §2 模板下交齐成功/失败/空三态与真实服务端来源 | 不表示主链路未通；①与②互不替代；「口径已覆盖」不表示「页面已达标」 |
 
-**口径 ① 的证据**：`tests/e2e` 共 9 个用例 × 2 个 Playwright 工程（`pc` / `mobile`）= **15 次运行**；`ensureAuthorization()` 真实点击 `m-generate-allocation` 并等待结果页「配置方案与候选已生成」，`mobile-flow` 断言 `plan` 非空且 `candidates.length >= 2`。该证据只证明**链路与状态写入真实**，不证明页面内容质量（§0.1）。截至本波次提交，`d0b7620` 上的 GitHub Actions 运行结论以 PR #10 的 6 个 job + `ci-merge-gate` 为准，本地 15/15 结论不得替代该门禁。
+**口径 ① 的证据**：`tests/e2e` 共 9 个用例 × 2 个 Playwright 工程（`pc` / `mobile`）= **15 次运行**；`ensureAuthorization()` 真实点击 `m-generate-allocation` 并等待结果页「配置方案与候选已生成」，`mobile-flow` 断言 `plan` 非空且 `candidates.length >= 2`。该证据只证明**链路与状态写入真实**，不证明页面内容质量（§0.1）。截至本波次提交，当前基线 `cf07b1b` 上的 GitHub Actions 运行结论以 PR #13 的 6 个 job + `ci-merge-gate`（以及波次 3 各 PR 自身的门禁）为准，本地 15/15 结论不得替代该门禁。
 
 **排期约束**：不得再按旧基数（曾写作「P 17 条 + H 6 组待办、H-06 全链路不可达」）排期；H-06 已从「阻塞项」降级为「两类失败态文档化」的小项。
 
@@ -189,6 +212,8 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **空**：无该期限产品 → 「该期限暂无挂牌利率」，不套用默认 2.15%。
 - **权威状态**：`products.annual_rate`（当前 `deposit`=2.15%）；计算复用 `deposit-interest-simple`，只需补一个可达入口（只读计算接口或会话命令）。
 - **命令/接口**：`GET /api/demo-data`；计算入口二选一（只读接口 / 会话命令），在 PR 中说明（**属于契约变更，需与状态契约 owner 同步**）。
+- **波次 2 校正（`cf07b1b`）**：上述「`executeDeterministic()` 全仓无调用方」**已过时**——PR#11 新增了只读入口 `BusinessRulesService.calculateDeposit({principal, annual_rate, years, rate_unit?, rule_version?})`，`rate_unit` 支持 `decimal`（默认，2.15% 传 `0.0215`）与 `percent`（传 `2.15`，服务端 ÷100），越界利率直接拒绝；成功返回 `status`、`rule_id`、`rule_version`、`calculation_id`、`rate_unit`、`inputs`、`result{interest, maturity_amount, formula}`。PR#12 已删除 `m-deposit-compare` 的浏览器自算，改为显式「需服务端权威结果」失败态。**剩余缺口**：该 service 尚无 HTTP 端点。
+- **已推进 · 波次 3**：入口形态**已定为只读计算端点**（不新增会话命令、不改冻结集合），语义与单位口径登记于 `docs/api-contract.md`「只读计算与派生投影（W1 波次 3）」第 1 节；端点路径与参数拼写**以 contract PR 描述为准**。**本条目标整体未收工**：`pc/product-deposit` 仍用前端常量换算，`m/deposit` 与 `m-deposit-compare` 尚未改接端点，「同一产品利率唯一真值」与三态用例均待页面侧完成。
 - **验收用例**：`tests/unit`（利率/期限矩阵可复算 + 百分数单位回归）、`tests/e2e`（三档期限与两个页面的数值一致）。
 - **关联**：A08；R9。
 
@@ -197,12 +222,13 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **当前演示态**：`pc/product-private` 整页是 `pageProductPrivateRestricted()`（一行受限提示 + 两个按钮），**根本没有产品内容挂载点**；`catalog.private`（`PE6`）虽已定义却未被任何路由使用。`m/private` 有受限提示 + 办理进度时间线 + `m-contact`（`patch({contactTodo:true})`，仅 `PATCH` 可选字段，非业务命令）。
 - **资质状态现状**：`defaultSessionState()` 的 `qualified` 与 `acceptanceAdvanced` 已从 `SESSION_PATCH_FIELDS` 移除并归为只读（`CONTEXT.md` P0 #3），`qualified` 无写入方；`customer` 的 `authorized` 来自数据快照。**因此「合格投资者认定」目前没有任何服务端可写状态**——这是本页最硬的前置，必须先由状态契约 owner 决定承载方式。
 - **目标完成条件**：未认定时展示受限说明且**不泄露**产品细节（现状已满足）；已认定时展示 `PE6` 的受限材料（产品事实来自服务端，不由前端硬编码）；认定状态来自服务端权威字段，「联系客户经理」写服务端可见记录。
-- **成功**：认定状态 = 已认定 → 展示服务端产品事实 + `product_explain` 结果；办理指引/联系客户经理产生服务端记录。
+- **成功**：认定状态 = 已认定 → 展示服务端产品事实 + `product_explain` 结果；办理指引/联系客户经理产生服务端记录（**该写入面仍滞后，见下条**）。
 - **失败**：未认定访问受限材料 → 明确拒绝文案，不返回部分内容。
 - **空**：无受限产品 → 「当前无受限产品」，不展示 `PE6` 占位。
 - **权威状态**：需新增只读资格状态（建议由服务端快照派生，浏览器不可写）；`contactTodo` 应从 `PATCH` 归入 `record_activity` 或独立命令（**契约变更，需 owner 批准**）。
 - **命令/接口**：`GET /api/demo-data`；资格状态接口与 `m-contact` 的承载方式待定。
 - **验收用例**：`tests/e2e`（未认定/已认定两种身份各一条，验证前端不泄露）。
+- **已推进 · 波次 3**：认定状态**已定为只读派生投影**（`qualifiedStatus`、`restrictedProducts`、`restrictedUnavailableReason`，语义见 `docs/api-contract.md` 同节第 3 节），派生自客户快照与 `products`，浏览器不可写，**不进 `defaultSessionState()`、不新增状态 key**；未认定时不返回任何受限产品细节。**仍滞后**：`m-contact`（`contactTodo`）从 `PATCH` 白名单迁到 `record_activity` 或独立命令属**写入面变更**，只读投影无法替代，须状态契约 owner 批准（§8.1 第 3 项），本波次不实现。**本条目标整体未收工**：页面尚未消费派生投影，认定/未认定两条 E2E 未补。
 - **关联**：A10、A13、A31、A32；R9、R32（私行受限与风险揭示）。
 
 ### P-06 `pc/supply`
@@ -300,6 +326,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **权威状态**：需新增保单服务端来源（当前 `products` 中 `insurance` 仅产品事实，无保单/覆盖度）。
 - **命令/接口**：`GET /api/demo-data`；保单接口待定（**需数据 owner 确认，不得前端伪造**）。
 - **验收用例**：`tests/e2e`（两张保单内容不同 + 空态）。
+- **已推进 · 波次 3**：保单/缺口**已定为只读派生投影**（语义见 `docs/api-contract.md` 同节第 4 节），只输出产品事实可确定的字段（`product_id`、名称、`coverage_type`、`coverage_amount`、`annual_premium`、`sale_status`、`data_id`、`data_as_of`），**绝不伪造**保单号、生效日期、理赔进度；无来源时 `policies=[]` + `unavailable_reason`，**不改冻结集合、不新增命令**。**本条目标整体未收工**：无真实保单来源，页面仍硬编码 72% 与固定弹窗；「两张保单内容不同」的用例在无数据源前**无法真实达成**，只补空态用例不得算收工。
 - **关联**：A08、A10、A13；R9。
 
 ### P-14 `m/wealth`
@@ -326,6 +353,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **代码事实（供实现方参考）**：服务端 `portfolioCalculation()` 给出的 `max_concentration` 是**跨产品**最大权重，按当前持仓为 `41.76%`；页面文案「单只宽基基金占权益资产 68%」是**权益内部占比**口径，两者不可混用。实现时必须明确分母（全资产 or 权益资产）并与页面文案一致。**基线校正（`d0b7620`，PR#9）**：`finalizeEvidence()` 已把 `portfolio_calculation` 嵌入 `structured_facts.holdings[]`，并在顶层 `calculations` 中保留同一 `calculation_id`；因此 P-15 不再需要「新增只读计算入口」来取数——**剩余工作是把页面读数改接到该事实**。若服务端需直接给出页面字段（而非经 AI 任务产出），仍需走 §8 第 5 行审批。
 - **验收用例**：`tests/unit`（复算）、`tests/e2e`。
 - **关联**：A08、A10；R10、R46。
+- **已推进 · 波次 3**：取数入口**已定为只读计算投影**（`PortfolioService.calculate()` 的 `calculation_id`、`total_amount`、`weights`、`max_concentration` + `max_concentration_basis`、`equity.*`、`holding_return`，语义见 `docs/api-contract.md` 同节第 2 节）；**不落会话字段、不改冻结集合**。口径红线：顶层 `max_concentration` 恒为 `basis=all_assets`（当前 41.76%），「单只宽基基金占权益资产 68%」只能读 `equity.max_concentration`（`basis=equity_assets`），两者不得互换；`holding_return.level="estimated"`，页面须标「估算」，不得回填 `+42,860.18 / 5.40%`；`unauthorized` / `no_holdings` 返回 `available=false`，页面显示「暂无持仓」而非 0 元。**本条目标整体未收工**：`m/holdings` 尚未消费该投影，复算用例与空态用例未补。
 
 ### P-16 `m/candidates`
 
@@ -445,16 +473,57 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 
 ### 8.1 八项变更清单
 
-| # | 变更（待批准规格） | 涉及页面 | 变更类型 | 是否改动冻结集合（36 key / 19 PATCH / 7 命令 / 11 `downstreamReset`） | 需同步的文档与测试断言 | 前置依赖 | 现状（`d0b7620`） |
+| # | 变更（待批准规格） | 涉及页面 | 变更类型 | 是否改动冻结集合（36 key / 19 PATCH / 7 命令 / 11 `downstreamReset`） | 需同步的文档与测试断言 | 前置依赖 | 现状（`cf07b1b`） |
 |---|---|---|---|---|---|---|---|
 | 1 | **规则匹配产出有效 `rule_id`**：默认目标 → `allocation-balanced-r3`，R1/R2 → `allocation-liquid-r2`（**已成立**，无需再审批） | H-06 → `m/candidates`、`m/compare`、`m/companion` | 无需变更（既有 fixture 行为，非契约） | **不改冻结集合** | 无需改 `session-contract.test.js`；`tests/unit/fixture-model-client.test.js`、`tests/integration/w1-flow.test.js` 已断言 `allocation-balanced-r3` | 无 | **已达**：`pickAllocationRule()` 自 `2d9ad15` 起生效。原「`rule_id: null` → `UNSUPPORTED_RULE`」登记作废。仅剩 **H-06 缺口 ②③**（`UNSUPPORTED_RULE` 独立结果页、`NEED_CONFIRMATION` 可达性）需**前端结果页**改动，仍属契约外的 UI 变更，可随 `frontend-flow`/`frontend-lead` 提交 |
-| 2 | **合格投资者认定状态**：新增只读字段（如 `qualifiedStatus`），由服务端快照派生，浏览器不可写 | P-05（`pc/product-private`、`m/private`） | 新增只读状态 key | **新增状态 key**：36 → 37（读模型）；若同时从 `defaultSessionState()` 落值，需在只读项（现 9 项）中登记 | `docs/api-contract.md` 契约表 + `session-contract.test.js` 的 36 项断言与只读分组断言；`CONTEXT.md` P0 #3 状态表 | 数据侧需先有认定来源（`db/`）；若复用 `customer.authorized`，须说明与授权的语义差别（A13） | 无写入方，`qualified` 已归只读 |
-| 3 | **`contactTodo` 迁移**：由 `PATCH` 可选字段改为 `record_activity`（`kind` 新增一类）或独立命令 `record_contact_request` | P-05（`m/private` 的 `m-contact`） | 命令迁移 | **改 PATCH 白名单**（19 → 18）并**新增命令**（7 → 8）或**新增 activity kind**（14 → 15） | `docs/api-contract.md` 契约表；`session-contract.test.js` 的 19/7 断言；若走 activity kind 还需 `tests/unit/activities.test.js` 白名单断言；`public/app.js` 的 `landingSpec` 映射 | 需先确认 `m-contact` 是否应保留「仅行内待办」语义（A11 要求服务端可见记录） | 现为 `SESSION_PATCH_FIELDS`，仅 PATCH |
-| 4 | **存款本息确定性计算**：接入已有 `deposit-interest-simple`，统一百分数/小数单位（`2.15%` → `0.0215`），入口在**只读计算接口**与**会话命令**中二选一 | P-04（`pc/product-deposit`、`m/deposit`、`m-deposit-compare`） | 新增入口（计算已存在） | 二选一：**只读接口**（`src/interfaces/http/`，不改冻结集合，但属 API 契约新增）／**新增命令**（7 → 8，改冻结集合） | 只读接口：`docs/api-contract.md` 新增端点节；命令：契约表 + 7 项断言。两种都需 `tests/unit` 单位回归（`2.15` vs `0.0215`） | `backend` 需先给 `executeDeterministic()` 补调用方与单位守卫；`data` 保证 `products.annual_rate`（`deposit`=2.15%）唯一真值 | 浏览器计算；`executeDeterministic()` **全仓无调用方**；百分数误传会放大 100 倍 |
-| 5 | **持仓收益/贡献/集中度计算**：复用 `portfolioCalculation`，页面字段经服务端产出 | P-15（`m/holdings`） | 新增只读计算入口 **或** 复用已有证据包装配 | **不改冻结集合**（若走 `portfolio_calculation` 证据路径）／**新增状态 key**（若要求直接落会话字段） | 走证据路径：`tests/integration` 断言 `calculation_id` 与 `max_concentration`；落会话字段：契约表 + 36 项断言 | **PR#9 已提供前提**：`finalizeEvidence()` 将 `portfolio_calculation` 嵌入 `structured_facts.holdings[]`；剩余为页面侧消费与分母口径（全资产 41.76% vs 权益内 68%） | 页面硬编码；分母口径与文案未统一 |
-| 6 | **保单与保障缺口数据来源**：新增保单表/接口（覆盖度、缺口、待办，按保单 ID 区分） | P-13（`m/insurance`）、P-03 保险板块 | 新增数据源 | **不改冻结集合**（只读数据接口）；若需写入会话则另行登记 | `docs/api-contract.md` 新增只读数据节；`tests/integration`（不含 DB 时用契约桩）与 `tests/e2e`（两张保单内容不同 + 空态） | `data` 新表 + seed；`contract` 定路由；**不得前端伪造**（A13、R32） | 无任何保单来源；`m-coverage`/`m-policy` 只开同一固定弹窗 |
-| 7 | **写作草稿持久化**：草稿写入服务端并刷新可回看 | P-10（`pc/writing`） | 新增状态 | **新增状态 key**（36 → 37，如 `writingDrafts`）或**新增命令**（7 → 8，如 `save_draft`） | 契约表 + 36/7 断言；`tests/e2e`（生成→刷新→回看） | 需确定草稿是否属 `activities` 之外的持久对象（A11 要求服务端存在）；AI 结果投影现状在前端 `PATCH` 写回 | 仅结果页可见，回页即消失 |
+| 2 | **合格投资者认定状态**：新增只读字段（如 `qualifiedStatus`），由服务端快照派生，浏览器不可写 | P-05（`pc/product-private`、`m/private`） | 新增只读状态 key | **新增状态 key**：36 → 37（读模型）；若同时从 `defaultSessionState()` 落值，需在只读项（现 9 项）中登记 | `docs/api-contract.md` 契约表 + `session-contract.test.js` 的 36 项断言与只读分组断言；`CONTEXT.md` P0 #3 状态表 | 数据侧需先有认定来源（`db/`）；若复用 `customer.authorized`，须说明与授权的语义差别（A13） | 无写入方，`qualified` 已归只读。**已推进 · 波次 3**：口径改按只读派生投影（不进 `defaultSessionState()`，不新增状态 key），页面接线后落地，见下方「波次 3 决策记录」一 |
+| 3 | **`contactTodo` 迁移**：由 `PATCH` 可选字段改为 `record_activity`（`kind` 新增一类）或独立命令 `record_contact_request` | P-05（`m/private` 的 `m-contact`） | 命令迁移 | **改 PATCH 白名单**（19 → 18）并**新增命令**（7 → 8）或**新增 activity kind**（14 → 15） | `docs/api-contract.md` 契约表；`session-contract.test.js` 的 19/7 断言；若走 activity kind 还需 `tests/unit/activities.test.js` 白名单断言；`public/app.js` 的 `landingSpec` 映射 | 需先确认 `m-contact` 是否应保留「仅行内待办」语义（A11 要求服务端可见记录） | 现为 `SESSION_PATCH_FIELDS`，仅 PATCH。**已推进 · 波次 3**：仍滞后，只读投影无法替代写入面，须 owner 批准，见「波次 3 决策记录」二 |
+| 4 | **存款本息确定性计算**：接入已有 `deposit-interest-simple`，统一百分数/小数单位（`2.15%` → `0.0215`），入口在**只读计算接口**与**会话命令**中二选一 | P-04（`pc/product-deposit`、`m/deposit`、`m-deposit-compare`） | 新增入口（计算已存在） | 二选一：**只读接口**（`src/interfaces/http/`，不改冻结集合，但属 API 契约新增）／**新增命令**（7 → 8，改冻结集合） | 只读接口：`docs/api-contract.md` 新增端点节；命令：契约表 + 7 项断言。两种都需 `tests/unit` 单位回归（`2.15` vs `0.0215`） | `backend` 需先给 `executeDeterministic()` 补调用方与单位守卫；`data` 保证 `products.annual_rate`（`deposit`=2.15%）唯一真值 | 浏览器计算；`executeDeterministic()` **全仓无调用方**；百分数误传会放大 100 倍。**已推进 · 波次 3**：PR#11 已落 `calculateDeposit()` 只读入口与单位守卫，改走只读接口形态；端点路径以 contract PR 描述为准，见「波次 3 决策记录」一 |
+| 5 | **持仓收益/贡献/集中度计算**：复用 `portfolioCalculation`，页面字段经服务端产出 | P-15（`m/holdings`） | 新增只读计算入口 **或** 复用已有证据包装配 | **不改冻结集合**（若走 `portfolio_calculation` 证据路径）／**新增状态 key**（若要求直接落会话字段） | 走证据路径：`tests/integration` 断言 `calculation_id` 与 `max_concentration`；落会话字段：契约表 + 36 项断言 | **PR#9 已提供前提**：`finalizeEvidence()` 将 `portfolio_calculation` 嵌入 `structured_facts.holdings[]`；剩余为页面侧消费与分母口径（全资产 41.76% vs 权益内 68%） | 页面硬编码；分母口径与文案未统一。**已推进 · 波次 3**：PR#11 已落 `PortfolioService.calculate()` 只读投影（双分母 + `estimated`），改走只读投影形态，见「波次 3 决策记录」一 |
+| 6 | **保单与保障缺口数据来源**：新增保单表/接口（覆盖度、缺口、待办，按保单 ID 区分） | P-13（`m/insurance`）、P-03 保险板块 | 新增数据源 | **不改冻结集合**（只读数据接口）；若需写入会话则另行登记 | `docs/api-contract.md` 新增只读数据节；`tests/integration`（不含 DB 时用契约桩）与 `tests/e2e`（两张保单内容不同 + 空态） | `data` 新表 + seed；`contract` 定路由；**不得前端伪造**（A13、R32） | 无任何保单来源；`m-coverage`/`m-policy` 只开同一固定弹窗。**已推进 · 波次 3**：口径改按只读派生投影（仅产品事实可确定字段，无来源即空态），页面接线后落地，见「波次 3 决策记录」一 |
+| 7 | **写作草稿持久化**：草稿写入服务端并刷新可回看 | P-10（`pc/writing`） | 新增状态 | **新增状态 key**（36 → 37，如 `writingDrafts`）或**新增命令**（7 → 8，如 `save_draft`） | 契约表 + 36/7 断言；`tests/e2e`（生成→刷新→回看） | 需确定草稿是否属 `activities` 之外的持久对象（A11 要求服务端存在）；AI 结果投影现状在前端 `PATCH` 写回 | 仅结果页可见，回页即消失。**已推进 · 波次 3**：仍滞后，需新增状态 key 或命令，须 owner 批准，见「波次 3 决策记录」二 |
 | 8 | **H-06 失败态结果页拆分**（登记以便集中处理，**不属状态契约**）：`UNSUPPORTED_RULE` 使用独立 `landingSpec`，`NEED_CONFIRMATION` 保留 `rule-confirmation` 且文案与 `missing_fields` 对应 | H-06（`m/allocation`） | 前端 `landingSpec` + `public/actions/flow.js` 分支 | **不改冻结集合** | 无需改契约文档与 `session-contract.test.js`；需 `tests/e2e`（规则不匹配失败态）与 `tests/unit`（三类状态映射） | 无（服务端已在非 MATCHED 时返回 `patch: {}`，不覆盖旧方案） | 两类状态共用 `rule-confirmation`，`UNSUPPORTED_RULE` 文案错位 |
+
+#### 波次 3 决策记录（2026-11-05，基线 `cf07b1b`）
+
+> 本节是对 §8.1 八项的**逐项处置结论**，不是新规格。结论只涉及「口径如何表达」，**不改动 36 / 19 / 7 / 11 任何冻结集合**；具体端点路径、查询参数拼写与响应字段名以波次 3 `contract` Worker 的 PR 描述为准，本节只登记语义（与 `docs/api-contract.md`「只读计算与派生投影（W1 波次 3）」一节互相对应）。
+
+**一、口径已由只读端点 / 派生投影覆盖（状态契约层面无需批准；页面接线并交齐三态后才算收工）**
+
+| §8.1 | 处置 | 依据（波次 2 已合并） | 剩余工作 |
+|---|---|---|---|
+| 4 P-04 存款 | **口径已定：只读计算端点**（端点路径待 contract PR），不新增会话命令 | PR#11 `calculateDeposit()` 已落 `rate_unit`、单位守卫、`calculation_id`、`rule_version` 精确匹配；PR#12 已停用浏览器自算 | contract 暴露 HTTP 端点；`pc/product-deposit`/`m/deposit`/`m-deposit-compare` 改接端点并交齐三态 |
+| 5 P-15 持仓 | **口径已定：只读计算投影**（复用共享 `computePortfolio()`），不落会话字段 | PR#11 `PortfolioService.calculate()` 已定义 `all_assets` / `equity_assets` 双分母与 `estimated` 收益口径 | contract 暴露端点；页面按分母口径改接并映射空态 |
+| 2 P-05 认定状态 | **口径已定：只读派生投影**，不进 `defaultSessionState()`，**不新增状态 key** | 无写入方；派生自客户快照与 `products` | contract 暴露投影；页面改接并区分未认定/已认定/无受限产品三态 |
+| 6 P-13 保单 | **口径已定：只读派生投影（限产品事实可确定字段）**，无保单写入 | 无保单来源 | contract 暴露投影；页面只在有来源时展示，否则显式空态；**不得**再回退到 72% / ¥4,000,000 硬编码 |
+
+> 上述四项的冻结集合影响一律为「**不改**」：不新增状态 key、不改 19 个 PATCH 白名单字段、不新增 7 个命令、不改 11 个 `downstreamReset` key。因此 `tests/unit/session-contract.test.js` 的 36/19/7/11 断言**保持原样**，落地这批端点**不构成契约变更**。
+
+**二、仍明确滞后，且确需状态契约 owner 批准（本波次不实现）**
+
+| §8.1 | 处置 | 为什么只读端点不能替代 |
+|---|---|---|
+| 3 `contactTodo` 迁移 | **滞后**：由 `PATCH` 白名单字段改为 `record_activity` 新 `kind` 或独立命令，需批准（19/7/14 kind 断言同步） | 「联系客户经理」要求产生服务端可见记录（A11）；这本质是一次**写入**，只能落命令或 activity kind，只读投影无法承载 |
+| 7 写作草稿持久化 | **滞后**：需新增状态 key 或新增 `save_draft` 命令，需批准 | 草稿需刷新后可回看（A11），属持久写对象；只读投影没有写入口，无法伪造 |
+| 其余任何需要**新增状态 key**的项 | **滞后**：一律先过 §8.2 流程 | 新增写入面必然改动 36 项断言，属契约变更 |
+
+> 再次明确：凡需要「写进会话」的需求（草稿、联系记录、认定结果落库、保单落库），**不能**用本波次的只读派生投影绕过；本波次不为这些需求提供任何写入通道。
+
+**三、本波次的架构选择：「不改冻结集合」**
+
+波次 3 在 P-04 / P-15 / P-05 / P-13 四项上选择「只读端点 + 派生投影、冻结集合零改动」，理由是：
+
+1. **可验证性**：只读端点不推进 `version`、不需 `expected_version`/`request_id`，与 7 个命令的状态机完全解耦，可独立验收（三态各一条），不牵连 `downstreamReset()` 级联；
+2. **不扩大写入面**（§8.2 第 3 条「只读优先」）：浏览器仍旧不能写认定状态、保单、计算值，A13「真实表达」与 A07「缺失值不编造」由服务端派生保证；
+3. **一次 PR 单侧改动即可通过**：冻结集合不变，因此本波次**不需要**在同一 PR 内改 `docs/api-contract.md` 契约表与 `session-contract.test.js` 断言；§8.2 第 2 条的「一次性同步」只对真正改集合的项生效；
+4. **可回退**：若后续 owner 决定把认定状态或草稿落成会话 key，只需在 §8.1 重新登记并按 36 → 37 正规模变更处理，已落地的只读端点是其**前置口径**，不会作废。
+
+**四、验收边界（红线沿用 §6）**
+
+- 上述只读端点与派生投影的**成功态只证明链路与结构真实**，不证明页面内容质量，也不构成生产验收结论（§0.1）；
+- 保单派生投影在无真实来源时**只能**返回空态与 `unavailable_reason`，**绝不伪造**保单号、生效日期、理赔进度（A13、R32）；
+- 持仓收益口径为 `estimated`，页面必须标明「估算」，不得把它写成已达成的收益率指标；集中度必须以 `basis` 明确分母（全资产 vs 权益资产）；
+- 存款利率口径以 `deposit-interest-simple` 的小数为准（2.15% 传 `0.0215`），百分数须显式 `rate_unit=percent`，不得让页面自行换算后再传小数。
 
 ### 8.2 波次 3 处理约定
 
@@ -462,6 +531,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 2. **一次性同步**：批准后同一次 PR 内同时改 `docs/api-contract.md` 与 `tests/unit/session-contract.test.js`，不得只改其中一侧；集合断言失败即视为未获批准；
 3. **只读优先**：能用只读接口/证据包表达的（第 4 项接口形态、第 5、6 项）优先，避免扩大写入面；
 4. **不得搭便车**：任何条目不得顺手改动与自身无关的冻结项或新增运行页面（§6 红线 1）；
+5. **波次 3 补充**：「波次 3 决策记录」一列出的 P-04 / P-15 / P-05 / P-13 四项走只读端点或派生投影，**不属于**本条第 1 款的批准范围（冻结集合不变），因此无需 owner 批准即可实现与验收；但若实现过程中发现必须改任一笔冻结集合，须立刻停止，回到 §8.1 重新登记并回到第 1、2 款流程；
 
 ## 9. 领取与验收流程
 
