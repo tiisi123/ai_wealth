@@ -1,14 +1,14 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { createContainer } from '../src/compositionRoot.js';
+import { applyMigrations, applySeedFiles } from './seed/applyMigrations.js';
 import { applyFixtureKnowledge } from './seed/fixtureKnowledge.js';
 
 const container = createContainer();
 if (!container.db.enabled) throw new Error('DATABASE_URL is required for seeding');
-const files = (await fs.readdir(path.join(container.config.PROJECT_ROOT, 'db/seeds'))).filter((file) => file.endsWith('.sql')).sort();
-for (const filename of files) {
-  await container.db.query(await fs.readFile(path.join(container.config.PROJECT_ROOT, 'db/seeds', filename), 'utf8'));
-  container.logger.info({ filename }, 'seed applied');
-}
+
+// A seed written against a stricter schema than the database has would fail
+// with a raw SQL error. Apply pending migrations first so `npm run seed` works
+// on a fresh database and stays repeatable afterwards.
+await applyMigrations(container);
+await applySeedFiles(container);
 await applyFixtureKnowledge(container);
 await container.db.close();
