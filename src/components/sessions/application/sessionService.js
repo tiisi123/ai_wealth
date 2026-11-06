@@ -13,6 +13,13 @@ function assertInput(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ValidationError('command input must be an object');
 }
 
+// A stringified boolean such as "false" is truthy in JavaScript, so it would
+// revoke from an "if (authorized)" check yet pass through as authorized.
+function booleanInput(value, field) {
+  if (typeof value !== 'boolean') throw new ValidationError(`${field} must be a boolean`, { field: typeof value });
+  return value;
+}
+
 export class SessionService {
   constructor({ repository, dataService, rulesService, defaultCustomerId = 'customer-001' }) {
     this.repository = repository;
@@ -90,13 +97,13 @@ export class SessionService {
   async buildTransition({ command, input, current, snapshot }) {
     const state = current.state;
     if (command === 'set_authorization') {
-      if (typeof input.authorized !== 'boolean') throw new ValidationError('authorized must be a boolean');
-      if (input.authorized && snapshot.customer.authorized !== true) throw new InsufficientEvidenceError('当前客户数据未授权，不能由浏览器授予权限');
+      const authorized = booleanInput(input.authorized, 'authorized');
+      if (authorized && snapshot.customer.authorized !== true) throw new InsufficientEvidenceError('当前客户数据未授权，不能由浏览器授予权限');
       return {
-        patch: input.authorized
+        patch: authorized
           ? { authorized: true, authNotice: '' }
           : { authorized: false, ...downstreamReset(), diagnosis: null, lastAnswer: null, researchAnswer: null },
-        result: { status: 'APPLIED', authorized: input.authorized }
+        result: { status: 'APPLIED', authorized }
       };
     }
 
