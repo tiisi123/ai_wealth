@@ -131,10 +131,12 @@ const pageHeading = (eyebrow, title, sub, actions='') => `<div class="page-headi
 // W1 work-item actions: these used to be static landing pages. Each now
 // writes a server-authoritative activity via the record_activity command.
 const WORK_ITEM_ACTIONS = new Set(['task-center','source-detail','new-supply','subscribe','brief','upload','extract','templates','review-writing','workspace','research-plan','save','mobile-search','filter-panel']);
-// Landing ids whose facts used to be hardcoded demo copy for work items with
-// no server writer. They now fall through to the explicit not-implemented
-// state so the result page never presents a success that was never written.
-const NOT_IMPLEMENTED_LANDINGS = ['workspace','subscribe','templates','extract','review-writing','filter-panel'];
+// The C-class 14 work items (CONTEXT.md P0 #1) are real: each one calls the
+// record_activity command and the result page renders the server-written
+// activity_id / created_at / data_version. None of them is "not implemented".
+// Only a landing id with no writer at all resolves to not-implemented, and such
+// ids are detected below instead of being listed here as if they were work items.
+const NOT_IMPLEMENTED_LANDINGS = [];
 const pcNav = [
  {label:'工作台',icon:'grid',items:[['pc/architecture','能力总览','grid'],['pc/workspace','投研工作台','users']]},
  {label:'财富产品洞察',icon:'chart',items:[['pc/product-fund','基金洞察','chart'],['pc/product-insurance','保险洞察','shield'],['pc/product-wealth','理财洞察','chart'],['pc/product-deposit','存款洞察','chart'],['pc/product-private','私行产品','lock'],['pc/candidates','候选产品池','filter'],['pc/compare','横向比较','grid']]},
@@ -506,12 +508,16 @@ function pageLibrary(){
 }
 
 function pageReader(){
-  const knowledge=sessionApi()?.KNOWLEDGE?.()||{};
+  // Knowledge comes from the shared-session projection (_knowledge*): there is
+  // no knowledge accessor on the adapter, and that file is not ours to change.
+  const knowledge={version:session()._knowledgeStatus?.knowledge_version||null,documents:session()._knowledgeDocuments||[],chunks:session()._knowledgeChunks||[]};
   const docs=knowledge.documents||[];
   if(!docs.length){
     return pageHeading('DOCUMENT READER','研究报告智能阅读','全文检索、章节解读、观点与数据提取，引用可定位到页码和原文位置。',btn('上传文档','upload','primary'))+`<div class="card"><div class="callout warn"><b>暂无已发布报告</b><p>GET /api/knowledge 没有返回任何知识文档，本页不展示演示正文。</p></div></div>`;
   }
   const docId=uiOf('document',docs[0].document_id);
+  // Documents come from the shared-session projection (_knowledgeDocuments);
+  // the adapter has no knowledge accessor and that file is not ours to change.
   const doc=docs.find(d=>d.document_id===docId)||docs[0];
   const chunks=(knowledge.chunks||[]).filter(c=>c.document_id===doc.document_id).slice(0,3);
   const chunkList=chunks.map(c=>`<div class="list-row"><h3>片段 ${esc(c.chunk_id)}</h3><p class="muted">${esc(c.title||'')} · 第 ${esc(String(c.page??'—'))} 页 · 来源 ${esc(c.source_id||'—')}</p></div>`).join('');
@@ -526,7 +532,7 @@ function pageWriting(){
   };
   const kind=uiOf('writingKind','定时写作');
   const cur=kinds[kind]||kinds['定时写作'];
-  return pageHeading('AI WRITING','智能写作','从研究计划到证据检索、章节审阅和终稿审核，让写作过程可回看、可校验。',btn('模板管理','templates','')+btn('新建写作任务','new-writing','primary'))+`<div class="grid main-aside"><div class="stack"><div class="card"><div class="card-head"><div><h2>创建研究产物</h2><p class="muted">选择写作类型后，下方任务会一起切换。</p></div>${statusBadge('当前：'+kind,'blue')}</div><div class="grid three">${Object.keys(kinds).map(k=>`<button class="card" data-action="pick-ui" data-ui-key="writingKind" data-ui-value="${esc(k)}" style="text-align:left;${k===kind?'border-color:var(--blue);background:#ebf1ff':''}"><span class="metric-icon">${icon(k==='定时写作'?'clock':k==='结构化一页纸'?'file':'spark')}</span><h3 class="section-space">${esc(k)}</h3><p class="muted">${esc(kinds[k].desc)}</p></button>`).join('')}</div></div><div class="card"><div class="card-head"><h2>当前任务：${esc(cur.task)}</h2>${statusBadge('待生成','orange')}</div><div class="timeline"><div class="timeline-item"><span class="step-circle current">1</span><div class="step-copy"><b>研究计划</b><p>点击「新建写作任务」后由应用服务生成草稿并写入本次结果页。</p></div></div><div class="timeline-item"><span class="step-circle">2</span><div class="step-copy"><b>大纲生成</b><p>由下一次写作调用产出，本页不展示预置大纲。</p></div></div><div class="timeline-item"><span class="step-circle">3</span><div class="step-copy"><b>关键观点确认</b><p>需研究员在草稿产出后确认。</p></div></div><div class="timeline-item"><span class="step-circle">4</span><div class="step-copy"><b>终稿与发布审核</b><p>待完成</p></div></div></div></div></div><aside class="stack"><div class="card"><div class="card-head"><h2>质量控制</h2>${statusBadge('未生成','blue')}</div><div class="callout">质控计数没有服务端来源，本页不展示「18/18」「26/28」等演示徽章。</div></div><div class="card"><div class="card-head"><h2>可复用资产</h2></div><div class="chips"><span class="chip">${esc(kind)}模板</span></div><p class="muted">模板管理与章节审阅在当前 W1 范围尚未实现，点击会显示「W1 未实现」失败态。</p></div></aside></div>`;
+  return pageHeading('AI WRITING','智能写作','从研究计划到证据检索、章节审阅和终稿审核，让写作过程可回看、可校验。',btn('模板管理','templates','')+btn('新建写作任务','new-writing','primary'))+`<div class="grid main-aside"><div class="stack"><div class="card"><div class="card-head"><div><h2>创建研究产物</h2><p class="muted">选择写作类型后，下方任务会一起切换。</p></div>${statusBadge('当前：'+kind,'blue')}</div><div class="grid three">${Object.keys(kinds).map(k=>`<button class="card" data-action="pick-ui" data-ui-key="writingKind" data-ui-value="${esc(k)}" style="text-align:left;${k===kind?'border-color:var(--blue);background:#ebf1ff':''}"><span class="metric-icon">${icon(k==='定时写作'?'clock':k==='结构化一页纸'?'file':'spark')}</span><h3 class="section-space">${esc(k)}</h3><p class="muted">${esc(kinds[k].desc)}</p></button>`).join('')}</div></div><div class="card"><div class="card-head"><h2>当前任务：${esc(cur.task)}</h2>${statusBadge('待生成','orange')}</div><div class="timeline"><div class="timeline-item"><span class="step-circle current">1</span><div class="step-copy"><b>研究计划</b><p>点击「新建写作任务」后由应用服务生成草稿并写入本次结果页。</p></div></div><div class="timeline-item"><span class="step-circle">2</span><div class="step-copy"><b>大纲生成</b><p>由下一次写作调用产出，本页不展示预置大纲。</p></div></div><div class="timeline-item"><span class="step-circle">3</span><div class="step-copy"><b>关键观点确认</b><p>需研究员在草稿产出后确认。</p>${btn('打开审阅','review-writing','small')}</div></div><div class="timeline-item"><span class="step-circle">4</span><div class="step-copy"><b>终稿与发布审核</b><p>待完成</p></div></div></div></div></div><aside class="stack"><div class="card"><div class="card-head"><h2>质量控制</h2>${statusBadge('未生成','blue')}</div><div class="callout">质控计数没有服务端来源，本页不展示「18/18」「26/28」等演示徽章。</div></div><div class="card"><div class="card-head"><h2>可复用资产</h2></div><div class="chips"><span class="chip">${esc(kind)}模板</span></div><p class="muted">模板管理与章节审阅在当前 W1 范围尚未实现，点击会显示「W1 未实现」失败态。</p></div></aside></div>`;
 }
 
 function pageProductPrivateRestricted(){
@@ -549,6 +555,16 @@ function landingSpec(id){
     'onepager':{title:'产品解释已生成',kicker:'产品洞察',summary:s.landing?.aiResult?.text||'未收到 AI 生成解释。',facts:[['产品',p.name||s.landing?.productId||'当前产品'],['来源',(s.landing?.aiResult?.citations||[]).join(' · ')||'暂无'],['模型 / 时延',`${s.landing?.aiResult?.model||'未知'} · ${s.landing?.aiResult?.latency_ms??'—'} ms`],['提示','不构成投资建议']].concat(s.landing?.aiResult?.execution_mode==='fixture'?[['执行模式','演示桩 fixture']]:[]),next:['打开比较'],nextActions:[['go-pc-compare','打开横向比较','primary'],['back-from','返回','light']]},
     'new-writing':{title:'写作草稿已生成',kicker:'智能写作',summary:s.landing?.aiResult?.text||'未收到 AI 生成草稿。',facts:[['主题',s.landing?.topic||'当前写作任务'],['来源',(s.landing?.aiResult?.citations||[]).join(' · ')||'暂无'],['模型 / 时延',`${s.landing?.aiResult?.model||'未知'} · ${s.landing?.aiResult?.latency_ms??'—'} ms`]].concat(s.landing?.aiResult?.execution_mode==='fixture'?[['执行模式','演示桩 fixture']]:[]),next:['返回写作台'],nextActions:[['back-from','返回写作台','primary']]},
     'mobile-search':{title:'基金搜索结果',kicker:'诊基',summary:'已用演示数据匹配到持仓与热门基金。',facts:[['关键词',s.landing?.query||'—'],['命中','易方达中证A500联接A'],['口径','近一年收益 / 回撤']],next:['打开诊断'],nextActions:[['m-diagnose','深度诊基','primary'],['back-from','返回','light']]},
+    // The six C-class work items below also write record_activity (like the
+    // entries above). Their result page shows only the server record; the old
+    // hardcoded "演示会话仅存内存" style facts are gone.
+    'subscribe':{title:'订阅已生效',kicker:'研究提醒',summary:'订阅已由应用服务写入真实活动记录，刷新后可恢复；提醒本身不写入真实推送系统。',facts:[['记录','record_activity · activities[]'],['范围','今日重点 · 本周观察'],['处理','未写入真实推送']],next:['返回研究页'],nextActions:[['back-from','返回','primary']]},
+    'extract':{title:'关键数据摘录',kicker:'智能阅读',summary:'关键数据提取已由应用服务写入真实活动记录；页码级摘录没有服务端来源，本页不展示演示条目。',facts:[['记录','record_activity · activities[]'],['处理','未写入摘录内容']],next:['返回阅读器'],nextActions:[['back-from','返回','primary']]},
+    'templates':{title:'写作模板',kicker:'智能写作',summary:'模板管理已由应用服务写入真实活动记录；模板库当前没有服务端来源，本页不展示演示模板。',facts:[['记录','record_activity · activities[]'],['处理','未写入模板']],next:['新建写作任务'],nextActions:[['new-writing','新建写作任务','primary'],['back-from','返回','light']]},
+    'review-writing':{title:'章节审阅',kicker:'质量控制',summary:'章节审阅已由应用服务写入真实活动记录；质控计数没有服务端来源，本页不提交真实发布。',facts:[['记录','record_activity · activities[]'],['处理','未提交发布']],next:['返回写作台'],nextActions:[['back-from','返回','primary']]},
+    'workspace':{title:'我的研究空间',kicker:'投研工作台',summary:'研究空间已由应用服务写入真实活动记录；个人工作区条目从服务端活动记录恢复。',facts:[['记录','record_activity · activities[]'],['权限',s.role||'投顾 / 财富管理']],next:['打开智能问答'],nextActions:[['go-research','打开研究台','primary'],['back-from','返回','light']]},
+    'research-plan':{title:'研究计划',kicker:'智能问答',summary:'研究计划已由应用服务写入真实活动记录；拆解步骤以服务端返回为准，本页不展示预置步数。',facts:[['记录','record_activity · activities[]'],['检索范围','行内知识库 · 市场数据'],['状态',s.researchAnswer?'已完成':'待发起']],next:['开始研究'],nextActions:[['ask','开始研究','primary'],['back-from','返回','light']]},
+    'filter-panel':{title:'筛选条件',kicker:'列表过滤',summary:'筛选操作已由应用服务写入真实活动记录；筛选本身在会话内生效，不改动服务端列表。',facts:[['记录','record_activity · activities[]'],['当前页',s.landing?.from||route()]],next:['返回列表'],nextActions:[['back-from','返回','primary']]},
     'auth-needed':{title:'需要授权',kicker:'资产配置',summary:'生成方案前需要勾选使用持仓和风险测评信息。',facts:[['用途','配置分析'],['范围','持仓 · 风险测评'],['提示','可随时取消']],next:['返回配置'],nextActions:[['back-from','返回配置页','primary']]},
     'rule-confirmation':{title:'需要确认配置条件',kicker:'RULE MATCH',summary:`规则匹配结果为 ${s.ruleMatch?.status||'NEED_CONFIRMATION'}，程序没有执行或覆盖旧方案。请补充缺失字段后重试。`,facts:[['规则',s.ruleMatch?.rule_id||'暂无'],['版本',s.ruleMatch?.rule_version||'暂无'],['缺失字段',(s.ruleMatch?.missing_fields||[]).join(' · ')||'需人工确认']],next:['返回配置'],nextActions:[['back-from','返回配置页','primary']]},
     'prompt-needed':{title:'请先输入问题',kicker:'问小财',summary:'用大白话描述你的理财问题后，系统会调用 AI 生成并返回证据与风险提示。',facts:[['示例','最近的市场变化会影响我的组合吗？'],['范围','已授权资料']],next:['返回助手'],nextActions:[['back-from','返回','primary']]},
