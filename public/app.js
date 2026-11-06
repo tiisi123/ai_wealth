@@ -305,6 +305,99 @@ function modelFlag(model){
   return {ready:typeof model.configured==='boolean'?model.configured:undefined};
 }
 
+// ---------------------------------------------------------------------------
+// Read-only calculation endpoints (P-04 deposit / P-15 portfolio)
+// The browser never computes business results and never invents a
+// calculation_id: every number on these pages comes from the server answer.
+// While the endpoint is not merged yet it answers 404/503, and the page shows
+// an explicit "服务端计算暂不可用" block instead of falling back to any
+// hardcoded amount or a default rate.
+// ---------------------------------------------------------------------------
+const DEPOSIT_ENDPOINT='/api/calculations/deposit';
+const PORTFOLIO_ENDPOINT='/api/calculations/portfolio';
+const CALC_ENDPOINTS={deposit:DEPOSIT_ENDPOINT,portfolio:PORTFOLIO_ENDPOINT};
+const CALC_STORES={deposit:{kind:'deposit',status:'idle',promise:null,data:null,error:'',key:''},portfolio:{kind:'portfolio',status:'idle',promise:null,data:null,error:'',key:''}};
+const CALC_ROUTES=new Set(['pc/product-deposit','m/deposit','m/holdings','m/companion']);
+const calcEndpoint=(kind)=>CALC_ENDPOINTS[kind]||kind;
+// Query string is built from explicit values only: a missing input stays absent
+// so the server, not this page, decides whether it is valid.
+function calcQuery(params){
+  const q=new URLSearchParams();
+  Object.entries(params||{}).forEach(([k,v])=>{
+    if(v===undefined||v===null||v==='') return;
+    q.set(k,String(v));
+  });
+  return q.toString();
+}
+function depositServerInput(){
+  const p=productOf('deposit');
+  if(!p) return null;
+  // The contract accepts the rate as a percentage rate plus an explicit unit.
+  // The server snapshot stores it as a decimal (0.0215 = 2.15%); the conversion
+  // is unit bookkeeping, not a calculation, and rate_unit travels with the value.
+  const rate=p.annual_rate==null?null:Number(p.annual_rate)*100;
+  if(rate==null||!Number.isFinite(rate)) return null;
+  return {principal:500000,annual_rate:rate,years:3,rate_unit:'percent',product_id:p.id};
+}
+
+function ensureCalc(kind,params){
+  const store=CALC_STORES[kind];
+  if(!store) return null;
+  const endpoint=calcEndpoint(kind);
+  const query=calcQuery(params);
+  const key=`${endpoint}?${query}`;
+  if(store.status==='pending'||store.status==='ok'||store.status==='unsupported') return store.promise;
+  if(store.status==='error'&&store.key===key) return store.promise;
+  store.status='pending'; store.key=key; store.error=''; store.data=null;
+  store.promise=(async()=>{
+    const suffix=query?`?${query}`:'';
+    try{
+      const response=await fetch(`${endpoint}${suffix}`,{headers:{accept:'application/json'}});
+      const body=await response.json().catch(()=>null);
+      if(response.ok&&body&&typeof body==='object'){
+        store.status='ok'; store.data=body;
+      }else if(response.status===404||response.status===501){
+        // Not merged / not routed yet: an explicit unavailable state, never a
+        // silent success and never a hardcoded fallback.
+        store.status='unsupported';
+        store.error=`GET ${endpoint} 返回 HTTP ${response.status}（接口尚未提供）`;
+      }else{
+        store.status='error'; store.data=body;
+        store.error=`GET ${endpoint} → HTTP ${response.status}${body?.error?.code?` ${body.error.code}`:''}${body?.error?.message?`：${body.error.message}`:''}`;
+      }
+    }catch(error){
+      store.status='error'; store.data=null;
+      store.error=`GET ${endpoint} 请求失败：${error?.message||'网络错误'}`;
+    }
+    if(CALC_ROUTES.has(route())) render();
+    return store;
+  })();
+  return store.promise;
+}
+
+// A calculation is only "successful" when the server answered 2xx with the
+// result fields the page needs; everything else is shown as a real state.
+// Returns null for the success state so each page renders the server fields.
+function calcStateView(store,{what}){
+  const endpoint=calcEndpoint(store.kind);
+  if(store.status==='idle'||store.status==='pending'){
+    return {tone:'blue',badge:'读取中',lead:'<b>读取中</b>',body:`<p>正在读取 GET ${esc(endpoint)}…</p>`};
+  }
+  if(store.status==='unsupported'){
+    return {tone:'red',badge:'服务端计算暂不可用',lead:'<b>服务端计算暂不可用</b>',body:`<p>${esc(what)}尚未由服务端计算接口给出，系统不会在浏览器计算，也不会用任何硬编码金额或默认利率补位。</p><p class="muted">${esc(store.error||'')}</p>`};
+  }
+  if(store.status==='error'){
+    const code=store.data?.error?.code||'';
+    const message=store.data?.error?.message||store.error||'';
+    return {tone:'red',badge:code?`服务端错误 ${esc(code)}`:'服务端错误',lead:`<b>服务端计算失败${code?`（${esc(code)}）`:''}</b>`,body:`<p>${esc(what)}未获得服务端结果，本次不展示任何金额。</p><p class="muted">${esc(message)}</p>`};
+  }
+  return null;
+}
+const calcRow=(k,v)=>`<div class="stat-row"><span>${esc(k)}</span><b>${v==null||v===''?'—':esc(String(v))}</b></div>`;
+const calcIdRow=(id)=>`<div class="stat-row"><span>calculation_id</span><b><code>${esc(String(id||'—'))}</code></b></div>`;
+const ratioToPct=(v)=>v==null||!Number.isFinite(Number(v))?'—':`${(Number(v)*100).toFixed(2)}%`;
+const cny=(v)=>v==null?'—':`¥${Number(v).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+
 function pageArchitecture(){
   const svc=serviceSections();
   // Kicking the read here (not at boot) keeps every other route free of an
@@ -385,6 +478,46 @@ function productFactsCard(p){
   return rows.map(r=>`<div class="stat-row"><span>${esc(r[0])}</span><b>${esc(String(r[1]))}</b></div>`).join('');
 }
 
+// P-04: the deposit maturity amount comes only from the read-only deposit
+// calculation endpoint. The input rate is the product's own annual_rate from
+// the server snapshot (transmitted with an explicit rate_unit), so no page
+// invents a default 2.15% and no amount is computed in the browser.
+function depositResultBody(result){
+  const lines=[
+    calcRow('本金',cny(result.principal)),
+    calcRow('年利率',ratioToPct(result.annual_rate)),
+    calcRow('期限（年）',result.years),
+    calcRow('利息',cny(result.interest)),
+    calcRow('到期本息',cny(result.maturity_amount)),
+    calcRow('公式',result.formula),
+    calcRow('利率来源',result.rate_source||result.source||'—'),
+    calcRow('数据时点',formatTime(result.source_timestamp||result.data_as_of)||'—')
+  ];
+  return `<div class="list-row">${lines.join('')}${calcIdRow(result.calculation_id)}</div>`;
+}
+function depositCard(title,{emptyText,pendingText}){
+  const dep=productOf('deposit');
+  const input=depositServerInput();
+  if(!dep||!input){
+    return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge('空态','blue')}</div><div class="callout"><b>该期限暂无挂牌利率</b><p>GET /api/demo-data 没有返回可用的存款产品与挂牌年利率，本页不套用默认利率，也不展示任何本息金额。</p></div></div>`;
+  }
+  ensureCalc('deposit',input);
+  const store=CALC_STORES.deposit;
+  const view=calcStateView(store,{what:'存款到期本息'});
+  if(view){
+    const tone=view.tone==='red'?'red':'blue';
+    if(view.badge==='读取中'){
+      return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge('读取中',tone)}</div><div class="callout">${esc(pendingText||'正在读取服务端存款本息计算…')}</div></div>`;
+    }
+    return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge(view.badge,tone)}</div><div class="callout ${view.tone==='red'?'warn':''}">${view.lead}${view.body}</div></div>`;
+  }
+  const result=store.data?.result||{};
+  if(!result||result.maturity_amount==null||result.interest==null){
+    return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge('无挂牌利率','blue')}</div><div class="callout"><b>${esc(emptyText||'该期限暂无挂牌利率')}</b><p>服务端没有返回该期限的计息结果，本页不展示任何本息金额，也不套用默认利率。</p></div></div>`;
+  }
+  return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge('服务端计算结果','green')}</div>${depositResultBody(result)}<div class="callout warn">利率取自服务端产品快照（${esc(dep.name||'')} · 数据时点 ${esc(literalTime(dep.source_timestamp)||'—')}）；到期本息为单利测算，不构成收益承诺。</div></div>`;
+}
+
 function productPage(type){
   const spec=PANEL_SPECS[type]||PANEL_SPECS.fund;
   const view=viewOf()||spec.tabs[0];
@@ -418,7 +551,7 @@ function productPage(type){
   }
   let main='';
   if(type==='deposit'&&view==='利率比较'){
-    main=`<div class="card"><div class="card-head"><h2>同金额利率比较</h2><span class="muted">服务端产品快照</span></div><div class="table-wrap"><table><thead><tr><th>产品</th><th>风险</th><th>挂牌年利率</th><th>起售金额</th><th>流动性</th></tr></thead><tbody>${products.map(p=>`<tr${p.id===current.id?' style="background:#ebf1ff"':''}><td><b>${esc(p.name)}</b></td><td>${esc(p.risk||'—')}</td><td>${p.annual_rate==null?'—':fmtPct(p.annual_rate)}</td><td>${p.min_amount==null?'—':`¥${Number(p.min_amount).toLocaleString('zh-CN')}`}</td><td>${esc(p.liquidity||'—')}</td></tr>`).join('')}</tbody></table></div></div>`+(hasInterval?intervalCard():'')+factsCard();
+    main=`<div class="card"><div class="card-head"><h2>同金额利率比较</h2><span class="muted">服务端产品快照</span></div><div class="table-wrap"><table><thead><tr><th>产品</th><th>风险</th><th>挂牌年利率</th><th>起售金额</th><th>流动性</th></tr></thead><tbody>${products.map(p=>`<tr${p.id===current.id?' style="background:#ebf1ff"':''}><td><b>${esc(p.name)}</b></td><td>${esc(p.risk||'—')}</td><td>${p.annual_rate==null?'—':fmtPct(p.annual_rate)}</td><td>${p.min_amount==null?'—':`¥${Number(p.min_amount).toLocaleString('zh-CN')}`}</td><td>${esc(p.liquidity||'—')}</td></tr>`).join('')}</tbody></table></div></div>${depositCard('测算工具（服务端计算）',{emptyText:'该期限暂无挂牌利率'})}`+(hasInterval?intervalCard():'')+factsCard();
   }else if(view==='办理流程'){
     main=`<div class="card"><div class="card-head"><h2>办理流程</h2></div><div class="timeline"><div class="timeline-item"><span class="step-circle done">${icon('check')}</span><div class="step-copy"><b>适当性匹配</b><p>风险等级、投资期限与 ${esc(current.liquidity||'持有期')} 核对。</p></div></div><div class="timeline-item"><span class="step-circle current">2</span><div class="step-copy"><b>阅读材料</b><p>说明书、风险揭示书、业绩比较基准说明。</p></div></div><div class="timeline-item"><span class="step-circle">3</span><div class="step-copy"><b>下单与确认</b><p>以业务系统确认结果为准，原型不发起真实交易。</p></div></div></div></div>`+factsCard();
   }else if(view==='保障比较'){
@@ -571,7 +704,7 @@ function landingSpec(id){
     'ai-error':{title:'AI 生成失败',kicker:'AI ERROR',summary:s.promptError||'生成或 Embedding 服务未就绪，系统没有使用预置答案推进流程。请检查会话状态、证据范围或生成服务配置。',facts:[['状态',s.aiStatus||'FAILED'],['请求',s.lastQuestion||s.landing?.query||'当前任务'],['处理','未写入成功结果']],next:['返回上一页'],nextActions:[['back-from','返回','primary']]},
     'action-error':{title:'操作未完成',kicker:'REQUEST ERROR',summary:s.promptError||'应用服务未确认本次操作，页面没有展示成功结果。',facts:[['处理','未展示成功结果'],['建议','检查服务状态后重试']],next:['返回上一页'],nextActions:[['back-from','返回','primary']]},
     'sync-error':{title:'共享数据加载失败',kicker:'SESSION ERROR',summary:s.promptError||'会话或业务数据未能从应用服务加载，演示常量不会作为真实加载结果。',facts:[['处理','真实数据未加载成功'],['建议','检查应用服务后刷新重试']],next:['返回上一页'],nextActions:[['back-from','返回','primary']]},
-    'm-review-detail':{title:'本周组合复盘',kicker:'投后陪伴',summary:'复盘数字没有服务端来源，本页不展示演示收益与目标完成度。',facts:[['区间','至 '+(s.asOf||'—')],['提示','复盘材料仅供客户经理内部使用']],next:['返回陪伴页'],nextActions:[['go-companion','返回投后陪伴','primary']]},
+    'm-review-detail':{title:'本周组合复盘',kicker:'投后陪伴',summary:'复盘数字取自服务端只读计算（演示数据 · AI_MODE=fixture），不是真实账务收益。',facts:[['区间','至 '+(s.asOf||'—')],['提示','复盘材料仅供客户经理内部使用']],next:['返回陪伴页'],nextActions:[['go-companion','返回投后陪伴','primary']]},
     'ask':{title:'研究结果',kicker:'智能问答',summary:`已完成研究：${s.landing?.query||s.researchAnswer?.question||'当前问题'}。回答带来源与数据时点，不构成投资建议。`,facts:[['问题',s.landing?.query||s.researchAnswer?.question||'当前问题'],['结论',s.researchAnswer?.text||'未收到生成结果'],['引用',(s.researchAnswer?.sources||[]).slice(0,2).join(' · ')||'暂无']],next:['查看候选解释'],nextActions:[['go-pc-candidates','打开候选产品池','primary'],['back-from','返回','light']]},
     'm-send':{title:'问小财已回答',kicker:'AI 助手',summary:s.lastAnswer?.text||s.promptError||'未收到 AI 生成结果。',facts:[['问题',s.lastQuestion||s.landing?.query||'当前问题'],['来源',(s.lastAnswer?.sources||[]).join(' · ')||'暂无'],['提示','信息辅助，不构成投资建议']],next:['查看持仓'],nextActions:[['m-holding','查看我的持仓','primary'],['back-from','返回助手','light']]},
     'generate-allocation':{title:'配置方案与候选已生成',kicker:'资产配置',summary:'规则结果、配置方案和真实候选均已由应用服务保存。',facts:[['目标',goalText()],['方案',s.plan?`现金 ${s.plan.cash}% · 固收 ${s.plan.bond}% · 权益 ${s.plan.equity}% · 保障 ${s.plan.protection}%`:'未生成'],['候选数',String(s.candidates?.length||0)]],next:['查看候选'],nextActions:[['go-candidates','查看候选推荐','primary'],['go-pc-candidates','打开 PC 候选池','light']]},
@@ -669,7 +802,7 @@ function mobileWealth(){
 }
 function mobileDeposit(){
   const dep=productOf('deposit')||{};
-  return `<div class="eyebrow">DEPOSIT</div><h1>存款产品</h1><p class="sub">利率与期限来自服务端产品事实；到期本息由服务端计算能力接线后开放。</p><div class="card"><div class="card-head"><h2>${esc(dep.name||'存款产品')}</h2>${statusBadge('演示桩 fixture','blue')}</div>${productFactsCard(dep)}<div class="callout warn"><b>测算暂不可用</b><p>本页原先前端自算到期本息，与 pc/product-deposit 的挂牌利率不一致；在服务端确定性计算接口落地前，本页不展示任何本息数字。</p></div></div>`;
+  return `<div class="eyebrow">DEPOSIT</div><h1>存款产品</h1><p class="sub">利率与期限来自服务端产品事实；到期本息由服务端只读计算接口给出。</p><div class="card"><div class="card-head"><h2>${esc(dep.name||'存款产品')}</h2>${statusBadge('演示桩 fixture','blue')}</div>${productFactsCard(dep)}</div>${depositCard('到期本息测算',{emptyText:'该期限暂无挂牌利率',pendingText:'正在读取服务端存款本息计算…'})}<p class="mobile-footer-note">本息为单利测算，按服务端返回的挂牌利率计算；提前支取与期限比较同样只使用服务端计算结果，浏览器不计算金额。</p>`;
 }
 function mobilePrivate(){const s=session(); return `<div class="eyebrow">PRIVATE BANK</div><h1>私行产品</h1><p class="sub">受限内容需要先完成资格确认和适当性校验。</p><div class="restricted">${icon('lock')}<h2>请先完成合格投资者认定</h2><p>当前账户未展示私募基金、信托和专户产品详情。完成认定后，产品说明书和募集材料才会在授权范围内展示。</p>${btn('查看办理指引','m-qualification','primary full')}${s.contactTodo?`<div class="callout good">已创建联系客户经理待办。</div>`:`<button class="link-btn" data-action="m-contact">联系客户经理</button>`}</div><div class="card"><div class="card-head"><h2>办理进度</h2>${statusBadge('空态','blue')}</div><div class="callout">合格投资者认定没有服务端可写状态，本页不展示演示办理进度。</div></div>`;}
 function mobileAllocation(){
@@ -685,13 +818,75 @@ function mobileAllocation(){
     : `<div class="card"><div class="card-head"><h2>配置逻辑</h2>${statusBadge('待输入完成','orange')}</div><p class="muted">系统会说明现金、固收、权益和保障在组合中的作用，并显示关键假设与风险提示。</p></div>`;
   return `<div class="eyebrow">ASSET ALLOCATION</div><h1>做一份资产配置</h1><p class="sub">先说清楚目标和约束，方案才有意义。</p>${s.authNotice?`<div class="callout ${s.authorized?'good':'warn'}">${esc(s.authNotice)}</div>`:''}<div class="card"><div class="card-head"><h2>${plan?'2 / 3 方案已生成':'1 / 3 客户目标'}</h2>${statusBadge(plan?'已保存':'约 1 分钟',plan?'green':'blue')}</div><div class="form-grid"><label>投资金额<input id="allocAmount" value="${esc(g.amount||'¥500,000')}"/></label><label>投资期限<select id="allocTerm">${termOpts}</select></label><label>风险等级<select id="allocRisk">${riskOpts}</select></label><label>资金用途<select id="allocPurpose">${purposeOpts}</select></label></div><label class="section-space">多久可能需要用到这笔钱？<select id="allocLiquidity">${liqOpts}</select></label><label class="check section-space"><input id="allocAuth" type="checkbox"${s.authorized!==false?' checked':''}/>我已授权使用持仓和风险测评信息</label>${btn(plan?'重新生成方案':'生成配置方案','m-generate-allocation','primary full')}</div>${planCard}`;
 }
+// P-15: 持有收益 / 收益贡献 / 集中度 only come from the read-only portfolio
+// calculation endpoint. Two denominators are shown side by side and are never
+// mixed: all_assets (全部持仓市值) and equity_assets (权益类持仓市值).
+// 保险保费 (annual_premium) is not a holdings row and never enters any sum.
+// GET /api/demo-data sends amounts/rates as strings (pg NUMERIC); they are
+// converted to numbers here only so the server's ratio can be printed.
+const PORTFOLIO_BASIS_LABEL={all_assets:'全资产口径',equity_assets:'权益资产口径'};
+const holdingIdOf=(holding)=>holding?.id;
+const holdingNameOf=(id)=>(sessionApi()?.HOLDINGS||[]).find(h=>holdingIdOf(h)===id)?.name||'';
+const numOrNull=(v)=>{
+  if(v===null||v===undefined||v==='') return null;
+  const n=typeof v==='number'?v:Number(String(v).replace(/[¥￥,\s]/g,''));
+  return Number.isFinite(n)?n:null;
+};
+function portfolioConcentrationRow(calc){
+  const allBasis=calc.max_concentration_basis||'all_assets';
+  const eq=calc.equity||{};
+  const eqBasis=eq.max_concentration_basis||'equity_assets';
+  const row=(basis,fraction,name,unavailableText)=>{
+    const label=PORTFOLIO_BASIS_LABEL[basis]||basis;
+    const n=numOrNull(fraction);
+    const value=n==null?unavailableText:`${(n*100).toFixed(2)}%`;
+    return `<div class="stat-row"><span>最大单产品权重 · <b>${esc(label)}</b><br><small class="muted">basis=${esc(basis)}${name?` · ${esc(name)}`:''}</small></span><b>${esc(value)}</b></div>`;
+  };
+  const eqAvailable=eq.available===true&&numOrNull(eq.max_concentration)!=null;
+  return `<div class="list-row"><h3>集中度（两种分母口径，不可混用）</h3>${row(allBasis,calc.max_concentration,holdingNameOf(calc.max_concentration_holding_id),'服务端未返回')}${eqAvailable?row(eqBasis,eq.max_concentration,holdingNameOf(eq.max_concentration_holding_id)):row(eqBasis,null,'','该口径不可用（无权益持仓）')}<p class="muted">全资产口径的分母是全部持仓市值（保险保费不在持仓内，不参与合计）；权益资产口径的分母只是权益类持仓市值，仅在该口径可用时展示。</p></div>`;
+}
+function portfolioReturnRow(calc){
+  const hr=calc.holding_return||{};
+  const amount=numOrNull(hr.amount);
+  if(hr.available!==true||amount==null){
+    return `<div class="list-row"><h3>持有收益</h3><p class="muted">服务端未返回可用收益：${esc(hr.unavailable_reason||'缺少收益基准')}。本页不展示估算金额。</p></div>`;
+  }
+  return `<div class="list-row"><h3>持有收益（服务端估算）</h3>${calcRow('收益金额',cny(amount))}${calcRow('收益率',ratioToPct(numOrNull(hr.rate)))}${calcRow('口径',`${hr.basis||'—'} · level=${hr.level||'—'}`)}<p class="muted">${esc(hr.note||'由持仓累计收益率按成本还原估算，不视为账务级收益。')}</p></div>`;
+}
 function mobileHoldings(){
   const s=session();
   const {rows,total,byType}=holdingsSummary();
   const colors=['#386bda','#769df0','#59b4b2','#dbc58d','#8069c4'];
   const legend=Object.entries(byType).map(([type,amount],i)=>`<span><i class="swatch" style="background:${colors[i%colors.length]}"></i>${esc(type)} ${total?((amount/total)*100).toFixed(1):'0.0'}%</span>`).join('');
-  const maxWeight=rows.reduce((best,row)=>Math.max(best,holdingValue(row)),0);
-  return `<div class="eyebrow">MY HOLDINGS</div><h1>持仓诊断</h1><p class="sub">收益、风险和集中度放在同一张图里。</p><div class="mobile-highlight"><div class="dim">总资产 · 截至 ${esc(s.asOf||'—')}</div><div class="metric-value">${moneyText(total)}</div><div class="between"><span class="dim">持有收益</span><b>${rows.some(r=>r.ret&&r.ret!=='—')?'单只收益见明细':'应用服务未提供组合收益'}</b></div></div><div class="card"><div class="card-head"><h2>资产分布</h2><span class="muted">按市值</span></div><div class="mobile-diagnostic"><div class="donut"><div class="donut-center"><b>${Object.keys(byType).length} 类</b>资产</div></div><div class="legend">${legend||'<span>暂无持仓</span>'}</div></div><div class="callout warn">集中度提醒：最大单产品权重 ${total?((maxWeight/total)*100).toFixed(2):'—'}%（按全资产口径复算，计算 ID 由服务端提供后展示）。</div>${btn('去做基金诊基','go-fund','primary full')}</div><div class="card"><div class="card-head"><h2>持仓明细</h2></div>${rows.map(x=>`<div class="stat-row"><span><b>${esc(x.name)}</b><br><small class="muted">${esc(x.type)}</small></span><b>${esc(x.amount)}<br><small class="positive">${esc(x.ret)}</small></b></div>`).join('')}${btn('查看全部','m-holding-detail','primary full')}</div>${s.reviewReady||s.plan?`<div class="path-next">${btn('查看投后陪伴','go-companion','full')}</div>`:''}`;
+  ensureCalc('portfolio',{});
+  const store=CALC_STORES.portfolio;
+  const view=calcStateView(store,{what:'持仓收益、收益贡献与集中度'});
+  const calc=store.data?.calculation||null;
+  const unavailable=store.status==='ok'&&store.data?.available!==true;
+  let calcCard;
+  if(unavailable){
+    const reason=store.data?.unavailable_reason;
+    const title=reason==='no_holdings'?'暂无持仓':reason==='unauthorized'?'未授权查看持仓计算':'服务端未返回持仓计算';
+    calcCard=`<div class="card"><div class="card-head"><h2>收益与集中度</h2>${statusBadge('空态','blue')}</div><div class="callout"><b>${esc(title)}</b><p>服务端未给出可计算的持仓，本页不展示 0 元，也不展示任何估算收益或集中度。</p><p class="muted">${esc(reason?`unavailable_reason=${reason}`:'')}</p></div></div>`;
+  }else if(view){
+    calcCard=`<div class="card"><div class="card-head"><h2>收益与集中度</h2>${statusBadge(view.badge,view.tone==='red'?'red':'blue')}</div><div class="callout ${view.tone==='red'?'warn':''}">${view.lead}${view.body}</div></div>`;
+  }else{
+    calcCard=`<div class="card"><div class="card-head"><h2>收益与集中度</h2>${statusBadge('服务端计算结果','green')}</div>${portfolioReturnRow(calc)}${portfolioConcentrationRow(calc)}<div class="list-row"><h3>计算来源</h3>${calcIdRow(calc.calculation_id)}${calcRow('计算版本',calc.calculation_version)}${calcRow('数据时点',formatTime(store.data?.data_as_of||calc.data_as_of)||'—')}${calcRow('合计（全资产口径）',cny(calc.total_amount))}</div><p class="muted">以上收益、贡献与集中度均取自服务端只读计算接口；保险保费不计入持仓金额合计。排序与结论不替代适当性判断。</p></div>`;
+  }
+  // Contributions are matched by holding_id (the server's key) and only shown
+  // when the server actually published a contribution for that position.
+  const positions=Array.isArray(calc?.positions)?calc.positions:[];
+  const contributionOf=(holdingId)=>{
+    const pos=positions.find(p=>p.holding_id===holdingId)||null;
+    const value=numOrNull(pos?.contribution_to_total_return);
+    return value==null?null:`${(value*100).toFixed(2)}%`;
+  };
+  const detailRows=rows.map(x=>{
+    const contribution=contributionOf(holdingIdOf(x));
+    return `<div class="stat-row"><span><b>${esc(x.name)}</b><br><small class="muted">${esc(x.type)}</small></span><b>${esc(x.amount)}<br><small class="positive">${esc(x.ret)}</small>${contribution?`<br><small class="muted">收益贡献 ${esc(contribution)}</small>`:''}</b></div>`;
+  }).join('');
+  const count=(rows.length>0&&total===0)?'×':String(Object.keys(byType).length);
+  return `<div class="eyebrow">MY HOLDINGS</div><h1>持仓诊断</h1><p class="sub">收益、风险和集中度放在同一张图里。</p><div class="mobile-highlight"><div class="dim">总资产 · 截至 ${esc(s.asOf||'—')}</div><div class="metric-value">${moneyText(total)}</div><div class="between"><span class="dim">持有收益</span><b>${numOrNull(calc?.holding_return?.amount)!=null&&calc.holding_return.available===true?`${cny(numOrNull(calc.holding_return.amount))}（估算）`:'服务端未提供组合收益'}</b></div></div><div class="card"><div class="card-head"><h2>资产分布</h2><span class="muted">按市值</span></div><div class="mobile-diagnostic"><div class="donut"><div class="donut-center"><b>${esc(count)} 类</b>资产</div></div><div class="legend">${legend||'<span>暂无持仓</span>'}</div></div>${btn('去做基金诊基','go-fund','primary full')}</div>${calcCard}<div class="card"><div class="card-head"><h2>持仓明细</h2></div>${detailRows}${btn('查看全部','m-holding-detail','primary full')}</div>${s.reviewReady||s.plan?`<div class="path-next">${btn('查看投后陪伴','go-companion','full')}</div>`:''}`;
 }
 function mobileCandidates(){
   const s=session();
@@ -729,7 +924,31 @@ function mobileCompare(){
 }
 function mobileCompanion(){
   const s=session();
-  return `<div class="eyebrow">PORTFOLIO CARE</div><h1>投后陪伴</h1><p class="sub">跟踪产品和组合变化，决定要不要联系客户。</p>${s.plan?`<div class="callout session-flag">关联方案：${esc(goalText())} · 现金 ${s.plan.cash}% / 固收 ${s.plan.bond}% / 权益 ${s.plan.equity}%</div>`:`<div class="callout warn">尚未关联配置方案</div>`}<div class="card"><div class="card-head"><div><h2>本周组合复盘</h2><p class="muted">至 ${esc(s.asOf||'—')}</p></div>${statusBadge(s.careSubmitted?'已提交':'待确认',s.careSubmitted?'green':'orange')}</div><div class="callout warn"><b>暂无复盘数字</b><p>组合收益与目标完成度没有服务端计算来源，本页不展示演示百分比。服务建议提交后状态为 WAITING_FOR_MANAGER，由客户经理确认是否触达。</p></div>${btn('查看复盘详情','m-review-detail','primary full')}</div><div class="card"><div class="card-head"><h2>重要事件</h2>${statusBadge(s.remindCreated?'1 条待办已建':'空态',s.remindCreated?'orange':'blue')}</div><div class="task-line"><span class="task-dot">${icon('clock')}</span><div class="task-text"><b>稳盈固收开放日</b><p>${s.remindCreated?'已创建开放日提醒':'尚未创建提醒'}</p></div>${btn('提醒','m-remind','small')}</div></div><div class="card"><div class="card-head"><h2>服务建议</h2>${s.careSubmitted?statusBadge('已提交','green'):''}</div><label class="check"><input type="checkbox" checked/>发送一条波动解释给客户</label>${s.careSubmitted?`<div class="callout good">已提交给客户经理确认（WAITING_FOR_MANAGER）。客户经理决定是否触达客户。</div>`:btn('提交给客户经理确认','m-submit-care','primary full')}</div>`;
+  // P-17: review figures come from the same read-only portfolio endpoint as
+  // P-15; no +0.86% / 68% / R3 copy is hardcoded. W1 runs AI_MODE=fixture, so
+  // the block is explicitly marked as 演示数据 rather than a real review.
+  ensureCalc('portfolio',{});
+  const store=CALC_STORES.portfolio;
+  const view=calcStateView(store,{what:'本周组合复盘数字'});
+  const calc=store.status==='ok'&&store.data?.available===true?(store.data.calculation||null):null;
+  const hr=calc?.holding_return||{};
+  let reviewBody;
+  if(view){
+    reviewBody=`<div class="callout ${view.tone==='red'?'warn':''}">${view.lead}${view.body}</div>`;
+  }else if(!calc){
+    reviewBody=`<div class="callout"><b>${esc(store.data?.unavailable_reason==='no_holdings'?'暂无持仓':'未授权查看持仓计算')}</b><p>服务端未给出可计算的持仓，本页不展示复盘收益与目标完成度。</p></div>`;
+  }else{
+    const hrAmount=numOrNull(hr.amount);
+    const rows=[
+      hr.available===true&&hrAmount!=null?calcRow('持有收益（服务端估算）',cny(hrAmount)):`<div class="stat-row"><span>持有收益</span><b>服务端未提供</b></div>`,
+      hr.available===true&&hrAmount!=null?calcRow('收益率（估算）',ratioToPct(numOrNull(hr.rate))):'',
+      calcRow('最大单产品权重 · 全资产口径',ratioToPct(numOrNull(calc.max_concentration))),
+      calc.equity?.available===true?calcRow('最大单产品权重 · 权益资产口径',ratioToPct(numOrNull(calc.equity.max_concentration))):'',
+      calcRow('风险等级',s.risk||s.goal?.risk||'—')
+    ].filter(Boolean).join('');
+    reviewBody=`<div class="list-row">${rows}${calcIdRow(calc.calculation_id)}</div><p class="muted">以上数字来自服务端只读计算（演示数据 · AI_MODE=fixture），不是真实账务收益，也不构成对客户的历史业绩陈述。权益口径与全资产口径不同，不可混用。</p>`;
+  }
+  return `<div class="eyebrow">PORTFOLIO CARE</div><h1>投后陪伴</h1><p class="sub">跟踪产品和组合变化，决定要不要联系客户。</p>${s.plan?`<div class="callout session-flag">关联方案：${esc(goalText())} · 现金 ${s.plan.cash}% / 固收 ${s.plan.bond}% / 权益 ${s.plan.equity}%</div>`:`<div class="callout warn">尚未关联配置方案</div>`}<div class="card"><div class="card-head"><div><h2>本周组合复盘</h2><p class="muted">至 ${esc(s.asOf||'—')}</p></div>${statusBadge(s.careSubmitted?'已提交':'待确认',s.careSubmitted?'green':'orange')}</div>${reviewBody}${btn('查看复盘详情','m-review-detail','primary full')}</div><div class="card"><div class="card-head"><h2>重要事件</h2>${statusBadge(s.remindCreated?'1 条待办已建':'空态',s.remindCreated?'orange':'blue')}</div><div class="task-line"><span class="task-dot">${icon('clock')}</span><div class="task-text"><b>稳盈固收开放日</b><p>${s.remindCreated?'已创建开放日提醒':'尚未创建提醒'}</p></div>${btn('提醒','m-remind','small')}</div></div><div class="card"><div class="card-head"><h2>服务建议</h2>${s.careSubmitted?statusBadge('已提交','green'):''}</div><label class="check"><input type="checkbox" checked/>发送一条波动解释给客户</label>${s.careSubmitted?`<div class="callout good">已提交给客户经理确认（WAITING_FOR_MANAGER）。客户经理决定是否触达客户。</div>`:btn('提交给客户经理确认','m-submit-care','primary full')}</div>`;
 }
 function mobilePage(r){const x={
  'm/assistant':['AI 助手',mobileAssistant], 'm/fund':['基金诊断',mobileFund], 'm/insurance':['保险保障',mobileInsurance], 'm/wealth':['理财产品',mobileWealth], 'm/deposit':['存款测算',mobileDeposit], 'm/private':['私行产品',mobilePrivate], 'm/allocation':['资产配置',mobileAllocation], 'm/holdings':['持仓诊断',mobileHoldings], 'm/candidates':['候选推荐',mobileCandidates], 'm/compare':['产品比较',mobileCompare], 'm/companion':['投后陪伴',mobileCompanion], 'm/result':['执行结果',mobileResult]
@@ -901,7 +1120,12 @@ window.addEventListener('wealth-session-ready',(event)=>{
   if(event.detail?.newSession) activeAiRequestToken+=1;
   render();
 });
-window.addEventListener('wealth-data-ready',render);
+window.addEventListener('wealth-data-ready',()=>{
+  // Server products (carrying the authoritative annual_rate) arrive here, so a
+  // calculation attempted before that handshake is retried from scratch.
+  ['deposit','portfolio'].forEach(kind=>{ const store=CALC_STORES[kind]; if(store.status!=='pending'){ store.status='idle'; store.promise=null; store.key=''; } });
+  render();
+});
 window.addEventListener('wealth-session-sync-error',(event)=>{
   // A failed initial read (session, shared data or /api/health) is deliberately
   // NOT routed to a landing page: a result screen would hide the source page's

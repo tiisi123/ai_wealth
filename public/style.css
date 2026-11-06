@@ -86,3 +86,14 @@ body.is-mobile{background:#f5f7fc}
 .requirement-entry summary{flex-wrap:wrap;gap:6px}
 .requirement-entry summary .req-title{flex-basis:65%}
 }
+/* P-04 / P-15: server calculation fields (formula, calculation_id) are long and
+   unbreakable tokens. They must wrap inside the value column instead of
+   squeezing the label column into one character per line. */
+.stat-row>span,.stat-row>b{min-width:0;overflow-wrap:break-word}
+.stat-row>span{flex:1 1 auto}
+.stat-row>b code{font-size:12px;overflow-wrap:break-word}
+/* 手机端：计算口径说明较长，改为上下两行，避免标签列与数值列互相挤压。 */
+@media(max-width:700px){
+.stat-row{grid-template-columns:1fr;gap:2px}
+.stat-row>b{text-align:left}
+}
