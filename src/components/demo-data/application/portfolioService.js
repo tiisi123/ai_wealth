@@ -5,6 +5,7 @@ import {
   PORTFOLIO_CALCULATION_VERSION,
   computePortfolio
 } from '../../ai-orchestration/domain/portfolioCalculation.js';
+import { toBoundedNumber, toOptionalNumber } from '../../../platform/numeric/numericValue.js';
 
 // P-15：持仓收益 / 收益贡献 / 集中度的只读计算口径（无副作用、不写会话）。
 //
@@ -50,6 +51,29 @@ function unavailableCalculation({ reason, dataAsOf }) {
   };
 }
 
+// 金额上限：与存款本金上限同一数量级（1 万亿元），只用于挡掉明显污染的脏数据。
+export const PORTFOLIO_MAX_AMOUNT = 1e12;
+
+/**
+ * 数据源数值归一（database 模式下 pg 的 NUMERIC 列以字符串返回，fixture 下是 number）。
+ * 在进入确定性计算前把 holdings.amount / holdings.return_rate 转成 number：
+ * - amount 必填、有限、>= 0 且 <= PORTFOLIO_MAX_AMOUNT；null/''/非数字 → 400 VALIDATION_ERROR，
+ *   不再让下游把字符串当成“无效持仓金额”并抛出 422。
+ * - return_rate 允许 NULL（=缺少收益基准）；但存在却不是数字时同样 400，绝不当作缺失掩盖脏数据。
+ * 只做类型归一：数值本身、持仓顺序、calculation_id 的输入结构都不变，fixture 结果保持逐字节一致。
+ */
+function normalizeHoldingFacts(holdings) {
+  return holdings.map((holding) => {
+    const id = holding?.id || holding?.holding_id;
+    const field = `holdings.amount[${id}]`;
+    return {
+      ...holding,
+      amount: toBoundedNumber(holding?.amount, { field, minimum: 0, maximum: PORTFOLIO_MAX_AMOUNT }),
+      return_rate: toOptionalNumber(holding?.return_rate, { field: `holdings.return_rate[${id}]` })
+    };
+  });
+}
+
 export class PortfolioService {
   constructor({ dataService }) {
     this.dataService = dataService;
@@ -84,7 +108,7 @@ export class PortfolioService {
         conventions: CALCULATION_CONVENTIONS
       };
     }
-    const calculation = computePortfolio({ holdings: snapshot.holdings, products: snapshot.products, dataAsOf: snapshot.data_as_of });
+    const calculation = computePortfolio({ holdings: normalizeHoldingFacts(snapshot.holdings), products: snapshot.products, dataAsOf: snapshot.data_as_of });
     return {
       available: true,
       unavailable_reason: null,
