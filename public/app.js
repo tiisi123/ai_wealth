@@ -489,6 +489,102 @@ const PANEL_SPECS={
   deposit:{types:['存款'],ey:'DEPOSIT INTELLIGENCE',title:'存款产品洞察',sub:'用相同金额、币种、期限和渠道比较利率，解释计息方式与提前支取影响。',tabs:['利率比较','产品通识'],color:'#5b83c9'}
 };
 const productMeta = (id) => ((sessionApi()?.HOLDING_BY_PRODUCT||{})[id] || null);
+
+// ---------------------------------------------------------------------------
+// Product facts shared by the product-insight pages (P-02 / P-03 / P-06 / P-08 / P-14)
+// The browser keeps no business numbers: these helpers only read what
+// GET /api/demo-data already published into the live session map, and every
+// value the service did not return is shown as 未提供 / 空态 instead of a default.
+// ---------------------------------------------------------------------------
+const PRODUCT_CATALOG = { status: 'idle', promise: null, body: null, error: '' };
+const PRODUCT_CATALOG_ROUTES = new Set(['pc/product-fund','pc/product-insurance','pc/product-wealth','m/wealth','pc/supply','pc/library']);
+// Only the live session map (replaced in place by session-sync.js from
+// /api/demo-data) is read here; the pre-sync DemoSession seed is not server data.
+function serverProductRows(type){
+  const connected=sessionApi()?.isConnected?.()===true;
+  // productRows() reads the live map directly, so a concurrent replaceData()
+  // can momentarily yield empty slots; those are skipped, never filled in.
+  const rows=connected?productRows().filter(p=>p&&typeof p==='object'):[];
+  return type?rows.filter(p=>p.type===type):rows;
+}
+// Monetary NUMERIC values arrive as strings from PostgreSQL; the page only
+// formats them and never derives an amount of its own.
+function amountText(value){
+  const n=numOrNull(value);
+  return n==null?'':`¥${n.toLocaleString('zh-CN',{maximumFractionDigits:0})}`;
+}
+// Sale status is printed only from the server field: an unknown value is shown
+// verbatim rather than being upgraded to 可售.
+const SALE_STATUS_LABEL={ON_SALE:'可售',OFF_SALE:'暂不可售',SUSPENDED:'暂停销售'};
+function saleStatusOf(product){
+  const raw=product?.sale_status;
+  if(raw===null||raw===undefined||raw==='') return {known:false,raw:'',label:'未提供',onSale:false};
+  return {known:true,raw:String(raw),label:SALE_STATUS_LABEL[String(raw)]||String(raw),onSale:String(raw)==='ON_SALE'};
+}
+// Server product facts are also published as one read-only snapshot so a page
+// can show that the list was loaded (and say so), not as a business value.
+function ensureProductCatalog(){
+  if(PRODUCT_CATALOG.status==='pending') return PRODUCT_CATALOG.promise;
+  if(PRODUCT_CATALOG.status==='ok'||PRODUCT_CATALOG.status==='error') return PRODUCT_CATALOG.promise;
+  const sessionId=sessionApi()?.sessionId?.();
+  if(!sessionApi()?.isConnected?.()||!sessionId) return null;
+  PRODUCT_CATALOG.status='pending';
+  PRODUCT_CATALOG.promise=(async()=>{
+    try{
+      const response=await fetch(`/api/demo-data?session_id=${encodeURIComponent(sessionId)}`,{headers:{accept:'application/json'}});
+      const body=await response.json().catch(()=>null);
+      if(!response.ok||!body){
+        PRODUCT_CATALOG.status='error';
+        PRODUCT_CATALOG.body=body;
+        PRODUCT_CATALOG.error=`GET /api/demo-data → HTTP ${response.status}${body?.error?.code?` ${body.error.code}`:''}${body?.error?.message?`：${body.error.message}`:''}`;
+      }else{
+        PRODUCT_CATALOG.status='ok';
+        PRODUCT_CATALOG.body=body;
+        PRODUCT_CATALOG.error='';
+      }
+    }catch(error){
+      PRODUCT_CATALOG.status='error';
+      PRODUCT_CATALOG.body=null;
+      PRODUCT_CATALOG.error=`GET /api/demo-data 请求失败：${error?.message||'网络错误'}`;
+    }
+    if(PRODUCT_CATALOG_ROUTES.has(route())) render();
+    return PRODUCT_CATALOG;
+  })();
+  return PRODUCT_CATALOG.promise;
+}
+function productCatalogView(){
+  if(PRODUCT_CATALOG.status==='error'){
+    return {ok:false,tone:'red',badge:'共享数据加载失败',lead:'<b>共享数据加载失败</b>',body:`<p>产品事实未能从共享应用服务加载，本页不展示任何静态或演示行。</p><p class="muted">${esc(PRODUCT_CATALOG.error||'')}</p>`};
+  }
+  if(PRODUCT_CATALOG.status!=='ok'){
+    return {ok:false,tone:'blue',badge:'读取中',lead:'<b>读取中</b>',body:`<p>正在读取 GET /api/demo-data…</p><p class="muted">${esc(PRODUCT_CATALOG.error||'第 1 次读取未能确认服务端状态，正在重试。')}</p>`};
+  }
+  return null;
+}
+
+// P-02: 观察区间. The service snapshot publishes ONE interval return per
+// product (latest_return) together with its data time point; it does not
+// publish 近三年 / 成立以来 series. Therefore only the interval that the
+// server actually names can be shown, and any other choice is an explicit
+// 该区间无数据 empty state that changes the data, never just a label.
+const FUND_INTERVALS=['近一年','近三年','成立以来'];
+const FUND_INTERVAL_DEFAULT='近一年';
+function fundInterval(){
+  const picked=uiOf('interval',FUND_INTERVAL_DEFAULT);
+  return FUND_INTERVALS.includes(picked)?picked:FUND_INTERVAL_DEFAULT;
+}
+function fundIntervalFact(product,interval){
+  const available=interval===FUND_INTERVAL_DEFAULT&&product?.latest_return!=null;
+  return {
+    interval,
+    available,
+    label:available?'近一年收益率':'该区间暂无数据',
+    value:available?ratioToPct(numOrNull(product.latest_return)):'',
+    as_of:available?(literalTime(product.source_timestamp)||product.source_timestamp||''):'',
+    source_id:available?(product.source_id||''):'',
+    reason:available?'':'GET /api/demo-data 只返回一个区间（近一年）的收益率，没有该区间的收益与回撤序列，系统不用其他区间或示意曲线补位'
+  };
+}
 function panelProducts(type){
   const spec=PANEL_SPECS[type]||PANEL_SPECS.fund;
   return productRows().filter(p=>spec.types.includes(p.type));
@@ -566,30 +662,63 @@ function depositCard(title,{emptyText,pendingText}){
 function productPage(type){
   const spec=PANEL_SPECS[type]||PANEL_SPECS.fund;
   const view=viewOf()||spec.tabs[0];
+  ensureProductCatalog();
+  const catalog=productCatalogView();
+  if(catalog){
+    return pageHeading(spec.ey,spec.title,spec.sub,btn('生成一页纸','onepager','primary'))+`<div class="card"><div class="card-head"><h2>产品事实</h2>${statusBadge(catalog.badge,catalog.tone)}</div><div class="callout ${catalog.tone==='red'?'warn':''}">${catalog.lead}${catalog.body}</div></div>`;
+  }
   const products=panelProducts(type);
   // Only 基金 / 理财 surface an interval return; the other panels have no
   // interval dimension, so they show no interval control or empty interval card.
   const hasInterval=spec.types.some(t=>t==='基金'||t==='理财');
-  const interval=hasInterval?uiOf('interval','近一年'):'';
+  const interval=hasInterval?fundInterval():'';
   if(!products.length){
-    return pageHeading(spec.ey,spec.title,spec.sub,btn('保存到工作区','save',''))+`<div class="card"><div class="callout warn"><b>当前无可用产品数据</b><p>GET /api/demo-data 没有返回「${esc(spec.types.join(' · '))}」类产品，本页不展示任何演示产品。</p></div>${products.length?'':''}</div>`;
+    return pageHeading(spec.ey,spec.title,spec.sub,btn('保存到工作区','save',''))+`<div class="card"><div class="callout warn"><b>当前无可用产品数据</b><p>GET /api/demo-data 没有返回「${esc(spec.types.join(' · '))}」类产品，本页不展示任何演示产品。</p></div></div>`;
   }
   const pickId=uiOf('productId', products[0].id);
   const product=products.find(x=>x.id===pickId)||products[0];
   const current=product;
-  const picker=products.map(p=>`<button type="button" class="catalog-item ${p.id===current.id?'active':''}" data-action="pick-ui" data-ui-key="productId" data-ui-value="${esc(p.id)}"><b>${esc(p.name)}</b><small>${esc(p.type||'')} · ${esc(p.ret||'' )}</small></button>`).join('');
+  // P-02: the interval is read as a server fact. Selecting an interval the
+  // service does not publish changes the DATA (to an explicit empty state),
+  // not just the label.
+  const intervalFact=hasInterval?fundIntervalFact(current,interval):null;
+  const intervalPick=p=>hasInterval?fundIntervalFact(p,interval):null;
+  const dataAsOf=literalTime(current.source_timestamp)||'—';
+  const picker=products.map(p=>{
+    const f=intervalPick(p);
+    return `<button type="button" class="catalog-item ${p.id===current.id?'active':''}" data-action="pick-ui" data-ui-key="productId" data-ui-value="${esc(p.id)}"><b>${esc(p.name)}</b><small>${esc(p.type||'')}${f?` · ${esc(f.available?f.value:'该区间暂无数据')}`:''}</small></button>`;
+  }).join('');
+  const intervalMetric=intervalFact.available&&hasInterval
+    ? ['近一年收益率',intervalFact.value]
+    : [hasInterval?`${interval}收益率`:'区间收益',hasInterval?'该区间暂无数据':'未提供'];
   const metrics=type==='fund'
-    ? [['区间收益',current.ret],['最大回撤',current.drawdown],['组合角色',current.role]]
+    ? [intervalMetric,['最大回撤',current.drawdown||'未提供'],['组合角色',current.role||'未提供']]
     : type==='insurance'
       ? [['风险等级',current.risk],['组合角色',current.role],['流动性',current.liquidity]]
       : type==='wealth'
-        ? [['区间收益',current.ret],['最大回撤',current.drawdown],['流动性',current.liquidity]]
-        : [['挂牌年利率',current.annual_rate==null?'—':fmtPct(current.annual_rate)],['起售金额',current.min_amount==null?'—':`¥${Number(current.min_amount).toLocaleString('zh-CN')}`],['流动性',current.liquidity]];
+        ? [intervalMetric,['最大回撤',current.drawdown||'未提供'],['流动性',current.liquidity]]
+        : [['挂牌年利率',current.annual_rate==null?'未提供':fmtPct(current.annual_rate)],['起售金额',current.min_amount==null?'未提供':amountText(current.min_amount)],['流动性',current.liquidity]];
   function overviewCard(){
-    return `<div class="card"><div class="card-head"><div><h2>${esc(current.name)}</h2><p class="muted">当前板块：${esc(view)} · ${esc(current.type||'')} · ${hasInterval?`观察区间 ${esc(interval)} · `:''}数据时点 ${esc(literalTime(current.source_timestamp)||'—')}</p></div></div><div class="grid three">${metrics.map(m=>`<div class="mini-stat"><div class="metric-label">${esc(m[0])}</div><div class="metric-value" style="font-size:21px">${esc(m[1]==null?'—':String(m[1]))}</div></div>`).join('')}</div><div class="legend"><span><i class="swatch" style="background:${spec.color}"></i>${esc(view)}</span><button class="source" data-action="source-detail">数据来源：${esc(current.source_id||'—')}</button></div></div>`;
+    return `<div class="card"><div class="card-head"><div><h2>${esc(current.name)}</h2><p class="muted">当前板块：${esc(view)} · ${esc(current.type||'')} · ${hasInterval?`观察区间 ${esc(interval)} · `:''}数据时点 ${esc(dataAsOf)}</p></div></div><div class="grid three">${metrics.map(m=>`<div class="mini-stat"><div class="metric-label">${esc(m[0])}</div><div class="metric-value" style="font-size:21px">${esc(m[1]==null?'未提供':String(m[1]))}</div></div>`).join('')}</div><div class="legend"><span><i class="swatch" style="background:${spec.color}"></i>${esc(view)}</span><button class="source" data-action="source-detail">数据来源：${esc(current.source_id||'未提供')}</button></div></div>`;
   }
   function intervalCard(){
-    return `<div class="card"><div class="card-head"><h2>观察区间：${esc(interval)}</h2>${statusBadge('仅服务端字段','blue')}</div><div class="callout warn"><b>该区间暂无数据</b><p>应用服务只返回一个区间收益（${esc(current.ret||'—')}，数据时点 ${esc(literalTime(current.source_timestamp)||'—')}），没有「${esc(interval)}」区间的收益与回撤序列。系统不会用其他区间或示意曲线补位。</p></div></div>`;
+    if(intervalFact.available){
+      return `<div class="card"><div class="card-head"><h2>观察区间：${esc(interval)}</h2>${statusBadge('服务端事实','green')}</div>${calcRow('区间',intervalFact.interval)}${calcRow('收益率',intervalFact.value)}${calcRow('口径字段','products[].latest_return')}${calcRow('数据时点',intervalFact.as_of||'未提供')}${calcRow('数据来源',intervalFact.source_id||'未提供')}<p class="muted">收益率取自 GET /api/demo-data 的产品快照；应用服务只发布一个区间（近一年）的收益率，选择其他区间会显示空态而不是沿用该值。</p></div>`;
+    }
+    return `<div class="card"><div class="card-head"><h2>观察区间：${esc(interval)}</h2>${statusBadge('空态 · 该区间无数据','blue')}</div><div class="callout warn"><b>该区间暂无数据</b><p>${esc(intervalFact.reason)}。</p><p class="muted">产品：${esc(current.name||current.id)} · 数据时点 ${esc(dataAsOf)}</p></div></div>`;
+  }
+  // P-02 / P-03: fields the specification asks for but the snapshot does not
+  // carry are listed as 无真实来源 with an explicit empty state; they are never
+  // back-filled by the page.
+  function unsourcedFactsCard(){
+    const wanted=type==='fund'
+      ? [['净值序列','products[] 未返回净值或净值时序'],['费率结构','仅返回单一管理费字段'],['规模','products[] 未返回规模字段'],['持仓与行业分布','products[] 未返回持仓/行业分布'],['基金经理','products[] 未返回基金经理']]
+      : [['保单（保单号 / 生效日 / 续保日）','products[] 只有产品事实，没有保单记录来源'],['理赔服务进度','没有理赔数据来源'],['管理人注册资本 / 在管规模','products[] 未返回管理人字段，原有静态数字已删除'],['审计信息','没有审计数据来源']];
+    return `<div class="card"><div class="card-head"><h2>暂未由服务端提供的字段</h2>${statusBadge('空态','blue')}</div><p class="muted">以下字段在规格中出现，但共享应用服务的产品快照没有对应字段。本页如实列为空态，不用演示数值补齐。</p>${wanted.map(([k,v])=>`<div class="stat-row"><span>${esc(k)}</span><b class="muted">未提供 · ${esc(v)}</b></div>`).join('')}</div>`;
+  }
+  // P-03: 保险页的「我的保单 / 理赔 / 通识」板块没有服务端来源，不展示为事实。
+  function insuranceBoardsCard(){
+    return `<div class="card"><div class="card-head"><h2>我的保单与理赔服务</h2>${statusBadge('空态','blue')}</div><div class="callout warn"><b>未授权或暂无可展示保单</b><p>共享应用服务没有返回保单记录（保单号、生效日、续保日、理赔进度均无来源），本页不展示任何保单卡片、续保日期或理赔时间线。</p></div></div>`;
   }
   function factsCard(){
     return `<div class="card"><div class="card-head"><h2>产品事实</h2><span class="muted">GET /api/demo-data</span></div>${productFactsCard(current)}<div class="callout warn">以上字段均取自共享应用服务的产品快照；业绩比较基准不代表预期收益。</div></div>`;
@@ -600,17 +729,17 @@ function productPage(type){
   }else if(view==='办理流程'){
     main=`<div class="card"><div class="card-head"><h2>办理流程</h2></div><div class="timeline"><div class="timeline-item"><span class="step-circle done">${icon('check')}</span><div class="step-copy"><b>适当性匹配</b><p>风险等级、投资期限与 ${esc(current.liquidity||'持有期')} 核对。</p></div></div><div class="timeline-item"><span class="step-circle current">2</span><div class="step-copy"><b>阅读材料</b><p>说明书、风险揭示书、业绩比较基准说明。</p></div></div><div class="timeline-item"><span class="step-circle">3</span><div class="step-copy"><b>下单与确认</b><p>以业务系统确认结果为准，原型不发起真实交易。</p></div></div></div></div>`+factsCard();
   }else if(view==='保障比较'){
-    main=`<div class="card"><div class="card-head"><h2>保障责任比较</h2><span class="muted">当前选中：${esc(current.name)}</span></div><div class="table-wrap"><table><thead><tr><th>产品</th><th>风险</th><th>组合角色</th><th>流动性</th><th>费率</th></tr></thead><tbody>${products.map(p=>`<tr${p.id===current.id?' style="background:#ebf1ff"':''}><td><b>${esc(p.name)}</b></td><td>${esc(p.risk||'—')}</td><td>${esc(p.role||'—')}</td><td>${esc(p.liquidity||'—')}</td><td>${esc(p.fee||'—')}</td></tr>`).join('')}</tbody></table></div><div class="callout warn">保单、保障缺口与理赔进度没有服务端来源，本页不展示这些板块，也不替代核保与理赔审核。</div></div>`+factsCard();
+    main=`<div class="card"><div class="card-head"><h2>保障责任比较</h2><span class="muted">当前选中：${esc(current.name)}</span></div><div class="table-wrap"><table><thead><tr><th>产品</th><th>风险</th><th>组合角色</th><th>流动性</th><th>费率</th><th>可售状态</th></tr></thead><tbody>${products.map(p=>{const sale=saleStatusOf(p); return `<tr${p.id===current.id?' style="background:#ebf1ff"':''}><td><b>${esc(p.name)}</b></td><td>${esc(p.risk||'—')}</td><td>${esc(p.role||'—')}</td><td>${esc(p.liquidity||'—')}</td><td>${esc(p.fee||'未提供')}</td><td>${esc(sale.label)}</td></tr>`;}).join('')}</tbody></table></div><div class="callout warn">保单、保障缺口与理赔进度没有服务端来源，本页不展示这些板块，也不替代核保与理赔审核。</div></div>`+insuranceBoardsCard()+unsourcedFactsCard()+factsCard();
   }else if(view==='产品通识'){
     main=`<div class="card"><div class="card-head"><h2>通识与口径</h2></div><div class="list-row"><h3>挂牌利率与到账利息</h3><p class="muted">挂牌利率不等于实际到账，需按计息规则折算；具体测算入口由服务端计算后开放。</p></div><div class="list-row"><h3>提前支取</h3><p class="muted">多数定期提前支取按活期，会显著降低收益。</p></div><div class="list-row"><h3>结构性存款</h3><p class="muted">保本不保证收益，观察期内市场波动会影响最终利率。</p></div></div>`+factsCard();
   }else if(view==='产品筛选'){
-    main=`<div class="card"><div class="card-head"><h2>筛选结果</h2><span class="muted">${products.length} 只 · 来自 GET /api/demo-data</span></div><div class="table-wrap"><table><thead><tr><th>产品</th><th>风险</th><th>区间收益</th><th>回撤</th><th>流动性</th></tr></thead><tbody>${products.map(p=>`<tr${p.id===current.id?' style="background:#ebf1ff"':''}><td><b>${esc(p.name)}</b></td><td>${esc(p.risk||'—')}</td><td>${esc(p.ret||'—')}</td><td>${esc(p.drawdown||'—')}</td><td>${esc(p.liquidity||'—')}</td></tr>`).join('')}</tbody></table></div></div>`+(hasInterval?intervalCard():'')+factsCard();
+    main=`<div class="card"><div class="card-head"><h2>筛选结果</h2><span class="muted">${products.length} 只 · 来自 GET /api/demo-data</span></div><div class="table-wrap"><table><thead><tr><th>产品</th><th>风险</th><th>${esc(interval)}收益</th><th>回撤</th><th>流动性</th><th>可售状态</th></tr></thead><tbody>${products.map(p=>{const f=intervalPick(p); const sale=saleStatusOf(p); return `<tr${p.id===current.id?' style="background:#ebf1ff"':''}><td><b>${esc(p.name)}</b></td><td>${esc(p.risk||'—')}</td><td>${esc(f.available?f.value:'该区间无数据')}</td><td>${esc(p.drawdown||'未提供')}</td><td>${esc(p.liquidity||'—')}</td><td>${esc(sale.label)}</td></tr>`;}).join('')}</tbody></table></div><p class="muted">区间收益取自 products[].latest_return（近一年口径）；回撤为 products[].drawdown；未返回的字段显示「未提供」，不用演示数值补齐。</p></div>`+(hasInterval?intervalCard():'')+unsourcedFactsCard()+factsCard();
   }else if(view==='基金通识'||view==='保险通识'){
     main=`<div class="card"><div class="card-head"><h2>${esc(type==='fund'?'基金':'保险')}通识</h2></div><div class="list-row"><h3>看什么</h3><p class="muted">跟踪误差、回撤、费率与流动性；不把历史收益当成预期收益。</p></div><div class="list-row"><h3>口径说明</h3><p class="muted">回撤按统一复权口径；适当性由客户风险测评决定，系统排序不替代人工结论。</p></div></div>`+factsCard();
   }else{
-    main=overviewCard()+(hasInterval?intervalCard():'')+factsCard();
+    main=[overviewCard(),hasInterval?intervalCard():'',type==='insurance'?insuranceBoardsCard():'',type==='fund'||type==='wealth'?unsourcedFactsCard():'',factsCard()].join('');
   }
-  const aside=`<aside class="stack"><div class="card"><div class="card-head"><h2>筛选条件</h2><button class="link-btn" data-action="reset-insight">重置</button></div>${hasInterval?`<label>观察区间<select data-ui-change="interval">${['近一年','近三年','成立以来'].map(k=>`<option${k===interval?' selected':''}>${esc(k)}</option>`).join('')}</select></label><p class="muted">切换区间只会重新请求真实字段；应用服务未提供该区间数据时显示空态。</p>`:'<p class="muted">该板块没有观察区间维度。</p>'}</div><div class="card"><div class="card-head"><h2>当前可切换产品</h2><span class="muted">${products.length}</span></div><div class="catalog-grid" style="grid-template-columns:1fr">${picker}</div></div><div class="card"><div class="card-head"><h2>相关材料</h2></div><div class="list-row"><h3>${icon('file')} ${esc(view)}材料</h3><p class="muted">随板块切换 · 数据时点 ${esc(literalTime(current.source_timestamp)||'—')}</p></div><div class="list-row"><h3>${icon('shield')} 风险揭示书</h3><p class="muted">强制阅读 · 内容以正式材料为准</p></div></div></aside>`;
+  const aside=`<aside class="stack"><div class="card"><div class="card-head"><h2>筛选条件</h2><button class="link-btn" data-action="reset-insight">重置</button></div>${hasInterval?`<label>观察区间<select data-ui-change="interval">${FUND_INTERVALS.map(k=>`<option${k===interval?' selected':''}>${esc(k)}</option>`).join('')}</select></label><p class="muted">区间取自服务端产品快照；应用服务没有该区间的收益序列时，切换为显式空态，而不是沿用近一年数值。</p>`:'<p class="muted">该板块没有观察区间维度。</p>'}</div><div class="card"><div class="card-head"><h2>当前可切换产品</h2><span class="muted">${products.length}</span></div><div class="catalog-grid" style="grid-template-columns:1fr">${picker}</div></div><div class="card"><div class="card-head"><h2>相关材料</h2></div><div class="list-row"><h3>${icon('file')} ${esc(view)}材料</h3><p class="muted">随板块切换 · 数据时点 ${esc(dataAsOf)}</p></div><div class="list-row"><h3>${icon('shield')} 风险揭示书</h3><p class="muted">强制阅读 · 内容以正式材料为准</p></div></div></aside>`;
   return pageHeading(spec.ey,spec.title,spec.sub,btn('保存到工作区','save','')+btn('生成一页纸','onepager','primary'))+`<div class="tabs" data-tabs="product">${spec.tabs.map(x=>`<button type="button" class="tab ${view===x?'active':''}" data-view="${esc(x)}">${esc(x)}</button>`).join('')}</div><div class="insight-banner"><span class="insight-kicker">${esc(view)}</span><div><b>${esc(current.name)}</b><p class="muted" style="margin:4px 0 0">当前板块是「${esc(view)}」，产品事实全部来自 GET /api/demo-data，演示数据不构成投资建议。</p></div></div><div class="grid main-aside"><div class="stack">${main}</div>${aside}</div>`;
 }
 
@@ -666,23 +795,57 @@ function researchPage(type){
   return pageHeading(data[0],data[1],data[2],btn('订阅提醒','subscribe','')+btn('生成简报','brief','primary'))+`<div class="grid main-aside"><div class="stack"><div class="card"><div class="card-head"><div><h2>${type==='events'?'重点事件':type==='macro'?'宏观指标看板':'行业研究视图'} · ${esc(view)}</h2><p class="muted">切换时间窗会重新取数</p></div><div class="segment">${['今日','本周','自定义'].map(x=>tabBtn(x,'今日')).join('')}</div></div><div class="callout warn"><b>暂无可引用材料</b><p>shared 知识库当前没有 ${type} 专属片段，应用服务也没有为「${esc(view)}」返回指标序列。系统不会补入默认观点或演示数值，可在智能问答中针对具体问题检索。</p></div>${btn('去智能问答提问','go-research','primary')}</div></div><aside class="stack"><div class="card"><div class="card-head"><h2>研究口径</h2>${statusBadge('透明','green')}</div><label>数据范围<select data-ui-change="scope"><option${uiOf('scope','行内授权 + 公开信息')==='行内授权 + 公开信息'?' selected':''}>行内授权 + 公开信息</option><option${uiOf('scope')==='仅行内授权'?' selected':''}>仅行内授权</option></select></label><label class="section-space">输出粒度<select data-ui-change="grain"><option${uiOf('grain','一页纸')==='一页纸'?' selected':''}>一页纸</option><option${uiOf('grain')==='深度报告'?' selected':''}>深度报告</option></select></label><label class="check section-space"><input type="checkbox" data-ui-check="infer" ${uiOf('infer','1')!=='0'?'checked':''}/>标出模型推断</label><p class="muted">当前口径：${esc(uiOf('scope','行内授权 + 公开信息'))} · ${esc(uiOf('grain','一页纸'))} · ${uiOf('infer','1')!=='0'?'已标出推断':'不展示推断'}。</p></div><div class="card"><div class="card-head"><h2>宏观日历</h2>${statusBadge('未提供','blue')}</div><div class="callout">应用服务没有提供日历数据，本页不展示演示日程。</div></div></aside></div>`;
 }
 
+// P-06: 供给目录的行与计数只来自共享应用服务。服务端没有「已审核供给」表，
+// 但产品主体研究的供给单元就是 /api/demo-data 的产品行；其余三类供给
+// （资讯 / 策略 / 行业观点）没有任何来源，一律显式空态，不再展示硬编码行。
+const SUPPLY_VIEWS=['全部','资讯','策略','产品研究'];
 function pageSupply(){
-  const view=viewOf()||'全部';
-  const rows=[['宏观早报 2026-09-28','资讯研究','研究院·宏观组','当日','已审核','配置 / 问答'],['固收+策略月报','策略研究','资产配置组','2026-10-25','已审核','选品 / 复盘'],['新能源行业速报','行业研究','行业研究组','2026-10-02','待复核','行业解读'],['A500产品评述','产品研究','基金产品组','2026-12-31','已审核','诊基 / 投顾']].filter(r=>view==='全部'||r[1].includes(view));
-  return pageHeading('RESEARCH SUPPLY','投研与策略供给','把财经早报、宏观简报、行业观点、策略研究和产品主体研究沉淀为可调用的已审核供给。',btn('新建研究供给','new-supply','primary'))+`<div class="grid main-aside section-space"><div class="card"><div class="card-head"><div><h2>供给目录</h2><p class="muted">当前视图：${esc(view)}</p></div><div class="segment">${['全部','资讯','策略','产品研究'].map(x=>tabBtn(x,'全部')).join('')}</div></div><div class="table-wrap"><table><thead><tr><th>供给名称</th><th>类型</th><th>来源</th><th>有效期</th><th>审核</th><th>可调用场景</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${esc(r[0])}</b></td><td>${esc(r[1])}</td><td>${esc(r[2])}</td><td>${esc(r[3])}</td><td>${statusBadge(r[4],r[4]==='已审核'?'green':'orange')}</td><td>${esc(r[5])}</td></tr>`).join('')||'<tr><td colspan="6">当前分类暂无已审核供给</td></tr>'}</tbody></table></div><div class="callout">本目录为演示供给清单；供给侧计数没有服务端来源，本页不展示任何统计口径的默认数值。</div></div><aside class="stack"><div class="card"><div class="card-head"><h2>观点调用规则</h2>${statusBadge('已启用','green')}</div><div class="stat-row"><span>适用角色</span><b>投研 · 投顾 · 产品</b></div><div class="stat-row"><span>必备字段</span><b>来源 · 时点 · 作者</b></div><div class="stat-row"><span>观点失效</span><b>到期自动下线</b></div><div class="callout">调用时会同时带出来源、适用范围和审核状态，避免只返回脱离上下文的结论。</div></div><div class="card"><div class="card-head"><h2>待处理</h2>${statusBadge('空态','blue')}</div><div class="list-row"><h3>当前无待处理供给</h3><p class="muted">应用服务没有提供待处理记录。</p></div></div></aside></div>`;
+  const view=SUPPLY_VIEWS.includes(viewOf())?viewOf():'全部';
+  ensureProductCatalog();
+  const catalog=productCatalogView();
+  const products=catalog?[]:serverProductRows('');
+  const supplyRow=(p)=>{
+    const sale=saleStatusOf(p);
+    return {id:p.id,name:p.name||p.id,type:p.type||'未提供',source:p.source_id||'未提供',asOf:literalTime(p.source_timestamp)||'未提供',sale,scenes:`${p.role||'未提供'} · ${sale.label}`};
+  };
+  const productRowsForSupply=view==='全部'||view==='产品研究'?products.map(supplyRow):[];
+  // 资讯 / 策略 / 行业观点没有服务端来源：即使在该视图下也不补行。
+  const rows=productRowsForSupply;
+  const emptyText=catalog?'供给目录加载失败，暂无可展示供给':(view==='资讯'||view==='策略'?'当前分类暂无已审核供给（共享应用服务没有该类供给的数据来源）':'暂无已审核供给');
+  const head=`<div class="card"><div class="card-head"><div><h2>供给目录</h2><p class="muted">当前视图：${esc(view)}</p></div><div class="segment">${SUPPLY_VIEWS.map(x=>tabBtn(x,'全部')).join('')}</div></div>`;
+  const body=catalog
+    ? `<div class="callout ${catalog.tone==='red'?'warn':''}">${catalog.lead}${catalog.body}</div></div>`
+    : `<div class="table-wrap"><table><thead><tr><th>供给名称</th><th>类型</th><th>来源</th><th>数据时点</th><th>可售状态</th><th>可调用场景</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${esc(r.name)}</b><br><span class="muted">product:${esc(r.id)}</span></td><td>${esc(r.type)}</td><td>${esc(r.source)}</td><td>${esc(r.asOf)}</td><td>${statusBadge(r.sale.label,r.sale.onSale?'green':'blue')}</td><td>${esc(r.scenes)}</td></tr>`).join('')||`<tr><td colspan="6">${esc(emptyText)}</td></tr>`}</tbody></table></div><div class="callout">供给行与行数取自 GET /api/demo-data（产品主体研究单元）；资讯、策略与行业观点没有服务端来源，本页不展示这两类演示行，也不展示任何统计口径的默认计数。</div></div>`;
+  return pageHeading('RESEARCH SUPPLY','投研与策略供给','把财经早报、宏观简报、行业观点、策略研究和产品主体研究沉淀为可调用的已审核供给。',btn('新建研究供给','new-supply','primary'))+`<div class="grid main-aside section-space">${head}${body}<aside class="stack"><div class="card"><div class="card-head"><h2>观点调用规则</h2>${statusBadge('已启用','green')}</div><div class="stat-row"><span>适用角色</span><b>投研 · 投顾 · 产品</b></div><div class="stat-row"><span>必备字段</span><b>来源 · 时点 · 作者</b></div><div class="stat-row"><span>观点失效</span><b>到期自动下线</b></div><div class="callout">调用时会同时带出来源、适用范围和审核状态，避免只返回脱离上下文的结论。</div></div><div class="card"><div class="card-head"><h2>待处理</h2>${statusBadge('空态','blue')}</div><div class="list-row"><h3>当前无待处理供给</h3><p class="muted">应用服务没有提供待处理记录。</p></div></div></aside></div>`;
 }
 
+// P-08: 产品智库里每张卡片都回指 /api/demo-data 的产品行与该产品的知识片段；
+// 知识版本与片段数只取自 GET /api/knowledge 的只读投影。没有真实来源的
+// 「观点资产」「审核状态」「更新日期」不再以演示行呈现。
+const LIBRARY_VIEWS=['全部产品','基金','理财','保险','存款'];
 function pageLibrary(){
-  const view=viewOf()||'全部产品';
-  const all=[['易方达中证A500联接A','基金 · R3 · 权益','大盘宽基，适合长期增长配置','2026-09-26','v2.4','已发布','基金'],['稳盈固收180天','理财 · R2 · 固收','持有期明确，适合稳健底仓','2026-09-25','v1.8','已发布','理财'],['安享长期医疗','保险 · 保障','关注续保条件和既往症责任','2026-09-20','v1.2','待审核','保险'],['安心定期3年','存款 · R1 · 确定性','闲置资金的确定性收益工具','2026-09-18','v3.0','已发布','存款'],['A500 产品评述','观点资产 · 基金','宽基配置解释材料','2026-09-26','v1.0','已发布','观点资产']];
-  const rows=all.filter(r=>view==='全部产品'||r[6]===view||r[1].includes(view.replace('产品','')));
+  const view=LIBRARY_VIEWS.includes(viewOf())?viewOf():'全部产品';
+  ensureProductCatalog();
+  const catalog=productCatalogView();
+  const products=catalog?[]:serverProductRows('');
+  const visible=view==='全部产品'?products:products.filter(p=>p.type===view);
   // Knowledge comes from the shared session projection (_knowledge*): there is
   // no knowledge accessor on the adapter, and that file is not ours to change.
   const knowledge={version:session()._knowledgeStatus?.knowledge_version||null,documents:session()._knowledgeDocuments||[],chunks:session()._knowledgeChunks||[]};
+  const chunks=knowledge.chunks||[];
   const meta=(knowledge.documents||[]).length
-    ? `${(knowledge.documents||[]).length} 份文档 · ${(knowledge.chunks||[]).length} 个片段 · 知识版本 ${knowledge.version||'—'}`
+    ? `${(knowledge.documents||[]).length} 份文档 · ${chunks.length} 个片段 · 知识版本 ${knowledge.version||'—'}`
     : '暂无已发布产品知识';
-  return pageHeading('PRODUCT KNOWLEDGE','产品智库','统一维护准入产品、说明书、净值数据和已审核观点，支持调用、失效和版本追溯。','')+`<div class="card"><div class="card-head"><h2>已发布知识</h2>${statusBadge(knowledge.version?'已加载':'空态',knowledge.version?'green':'blue')}</div><div class="stat-row"><span>知识版本</span><b>${esc(knowledge.version||'—')}</b></div><div class="stat-row"><span>文档 / 片段</span><b>${esc(meta)}</b></div><p class="muted">以上来自 GET /api/knowledge；产品卡片、观点与调用次数没有服务端来源，不展示默认数值。</p></div><div class="card section-space"><div class="between"><div class="tabs" data-tabs="library">${['全部产品','基金','理财','保险','观点资产'].map(x=>`<button type="button" class="tab ${view===x?'active':''}" data-view="${x}">${x}</button>`).join('')}</div><div class="row"><input placeholder="搜索产品名称或代码"/><button class="icon-btn">${icon('filter')}</button></div></div><div class="insight-banner" style="margin:12px 0"><span class="insight-kicker">${esc(view)}</span><p class="muted" style="margin:0">当前分类「${esc(view)}」，下方清单为演示目录，版本号与审核状态以服务端知识版本为准。</p></div><div class="table-wrap"><table><thead><tr><th>产品</th><th>产品特征</th><th>一句话评述</th><th>更新日期</th><th>版本</th><th>状态</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${esc(r[0])}</b><br><span class="muted">${r[1]}</span></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td><td>${statusBadge(r[5],r[5]==='已发布'?'green':'orange')}</td></tr>`).join('')||'<tr><td colspan="6">暂无已发布产品知识</td></tr>'}</tbody></table></div></div>`;
+  const knowledgeCell=(p)=>{
+    if(!knowledge.version) return statusBadge('无知识版本','blue');
+    const hits=chunks.filter(c=>c.product_id===p.id);
+    if(!hits.length) return statusBadge('无知识片段','blue');
+    return `<span class="badge green">${hits.length} 个片段</span><br><small class="muted">${esc(knowledge.version)} · ${esc(hits.map(c=>c.document_id).join(' · '))}</small>`;
+  };
+  const body=catalog
+    ? `<div class="callout ${catalog.tone==='red'?'warn':''}">${catalog.lead}${catalog.body}</div></div>`
+    : `<div class="table-wrap"><table><thead><tr><th>产品</th><th>产品特征</th><th>数据时点</th><th>可售状态</th><th>知识引用</th></tr></thead><tbody>${visible.map(p=>{const sale=saleStatusOf(p); return `<tr><td><b>${esc(p.name||p.id)}</b><br><span class="muted">product:${esc(p.id)} · ${esc(p.source_id||'来源未提供')}</span></td><td>${esc(p.type||'未提供')} · ${esc(p.risk||'未提供')} · ${esc(p.role||'未提供')}</td><td>${esc(literalTime(p.source_timestamp)||'未提供')}</td><td>${statusBadge(sale.label,sale.onSale?'green':'blue')}</td><td>${knowledgeCell(p)}</td></tr>`;}).join('')||'<tr><td colspan="5">暂无已发布产品知识</td></tr>'}</tbody></table></div><p class="muted">卡片与产品特征取自 GET /api/demo-data，知识版本与片段取自 GET /api/knowledge；「一句话评述」「审核状态」「更新日期」没有服务端字段，已从表格移除，不以演示行补齐。观点资产类条目没有服务端来源，因此不设该分类。</p></div>`;
+  return pageHeading('PRODUCT KNOWLEDGE','产品智库','统一维护准入产品、说明书、净值数据和已审核观点，支持调用、失效和版本追溯。','')+`<div class="card"><div class="card-head"><h2>已发布知识</h2>${statusBadge(knowledge.version?'已加载':'空态',knowledge.version?'green':'blue')}</div><div class="stat-row"><span>知识版本</span><b>${esc(knowledge.version||'—')}</b></div><div class="stat-row"><span>文档 / 片段</span><b>${esc(meta)}</b></div><p class="muted">以上来自 GET /api/knowledge；产品卡片来自 GET /api/demo-data。调用次数没有服务端来源，不展示默认数值。</p></div><div class="card section-space"><div class="between"><div class="tabs" data-tabs="library">${LIBRARY_VIEWS.map(x=>`<button type="button" class="tab ${view===x?'active':''}" data-view="${x}">${x}</button>`).join('')}</div><div class="row"><input placeholder="搜索产品名称或代码"/><button class="icon-btn">${icon('filter')}</button></div></div><div class="insight-banner" style="margin:12px 0"><span class="insight-kicker">${esc(view)}</span><p class="muted" style="margin:0">当前分类「${esc(view)}」，清单与知识版本均取自服务端只读接口。</p></div>${body}</div>`;
 }
 
 function pageReader(){
@@ -833,17 +996,34 @@ function mobileInsurance(){
   }
   return `<div class="eyebrow">INSURANCE</div><h1>保险保障检视</h1><p class="sub">把保障责任、缴费和待确认事项放在一处。系统不替代健康告知、核保和理赔审核。</p><div class="card"><div class="card-head"><h2>我的保障</h2><p class="muted">来自 GET /api/demo-data</p></div><div class="callout warn"><b>暂未发现缺口</b><p>保障缺口与覆盖度没有服务端计算来源，本页不展示演示百分比。</p></div></div>${products.map(p=>`<div class="card"><div class="card-head"><h2>${esc(p.name)}</h2>${statusBadge('产品事实','blue')}</div>${productFactsCard(p)}${btn('查看保障详情','m-coverage','light full',p.id)}</div>`).join('')}`;
 }
+// P-14: 可售徽章只读服务端 sale_status。原来的徽章不看该字段，任何产品都显示「我行可售」；
+// 现在既没有该字段也不得显示可售，且明确给出「未提供」，不以默认值补齐。
+function saleBadgeChip(sale){
+  if(!sale.known) return `<span class="chip muted">可售状态未提供</span>`;
+  return `<span class="chip ${sale.onSale?'good':'warn'}">${sale.onSale?'我行可售':'暂不可售'} · ${esc(sale.raw)}</span>`;
+}
 function wealthCard(id){
   const p=productOf(id)||{};
-  const sellable=String(p.sale_status||'').toUpperCase()==='ON_SALE'||p.sale_status==='可售';
-  return `<div class="mobile-product"><div class="between"><div><span class="badge ${id==='wealth'?'blue':''}">${esc(p.risk||'')} · ${esc(p.role||'')}</span><h3>${esc(p.name||id)}</h3></div><div class="rate">${esc(p.ret||'')}<small>近一年</small></div></div><div class="product-meta">${esc(p.detail||'')}　${esc(p.liquidity||'')}</div><div class="chips"><span class="chip">${esc(p.role||'')}</span>${p.sale_status?`<span class="chip">${sellable?'可售':'暂不可售'} · ${esc(p.sale_status)}</span>`:''}</div><div class="between" style="margin-top:12px">${btn('看懂产品','m-wealth-detail','small',id)}<button class="link-btn" data-action="m-save" data-product="${esc(id)}">加入比较 ${icon('plus')}</button></div></div>`;
+  const sale=saleStatusOf(p);
+  // The only return the snapshot publishes is the 近一年 interval return; a
+  // product without it shows 未提供 instead of an empty rate block.
+  const rate=p.latest_return==null?`<div class="rate"><small>近一年收益未提供</small></div>`:`<div class="rate">${esc(p.ret||'')}<small>近一年</small></div>`;
+  return `<div class="mobile-product"><div class="between"><div><span class="badge ${id==='wealth'?'blue':''}">${esc(p.risk||'')} · ${esc(p.role||'')}</span><h3>${esc(p.name||id)}</h3></div>${rate}</div><div class="product-meta">${esc(p.detail||'')}　${esc(p.liquidity||'')}</div><div class="chips"><span class="chip">${esc(p.role||'')}</span>${saleBadgeChip(sale)}</div><div class="between" style="margin-top:12px">${btn('看懂产品','m-wealth-detail','small',id)}<button class="link-btn" data-action="m-save" data-product="${esc(id)}">加入比较 ${icon('plus')}</button></div></div>`;
 }
 function mobileWealth(){
-  const view=viewOf()||'全部';
-  const ids=panelProducts('wealth').map(p=>p.id);
-  const map={全部:ids,现金管理:ids.filter(id=>String(productOf(id)?.role||'').includes('现金')),固收:ids.filter(id=>String(productOf(id)?.role||'').includes('底仓')),'固收+':ids.filter(id=>String(productOf(id)?.role||'').includes('增强'))};
+  const view=['全部','现金管理','固收','固收+'].includes(viewOf())?viewOf():'全部';
+  const products=serverProductRows('理财');
+  const ids=products.map(p=>p.id);
+  const byId=new Map(products.map(p=>[p.id,p]));
+  const map={全部:ids,现金管理:ids.filter(id=>String(byId.get(id)?.role||'').includes('现金')),固收:ids.filter(id=>String(byId.get(id)?.role||'').includes('底仓')),'固收+':ids.filter(id=>String(byId.get(id)?.role||'').includes('增强'))};
   const list=map[view]||map['全部'];
-  return `<div class="eyebrow">WEALTH PRODUCT</div><h1>理财产品</h1><p class="sub">按风险、期限和流动性找到适合的产品。</p><div class="mobile-tags">${['全部','现金管理','固收','固收+'].map(x=>tabBtn(x,'全部')).join('')}</div>${list.map(wealthCard).join('')||'<div class="card"><p>当前视图暂无产品</p></div>'}<p class="mobile-footer-note">当前视图：${esc(view)}。业绩比较基准不代表预期收益；可售状态取自服务端 sale_status。</p>`;
+  if(!list.length){
+    const body=ids.length
+      ? `<div class="card"><p>当前视图暂无产品</p><p class="muted">服务端只返回 ${ids.length} 只理财产品，没有「${esc(view)}」分类下的产品；系统不补入默认产品。</p></div>`
+      : `<div class="card"><p>当前视图暂无产品</p><p class="muted">GET /api/demo-data 没有返回「理财」类产品（或共享会话尚未就绪），本页不展示任何演示产品。</p></div>`;
+    return `<div class="eyebrow">WEALTH PRODUCT</div><h1>理财产品</h1><p class="sub">按风险、期限和流动性找到适合的产品。</p><div class="mobile-tags">${['全部','现金管理','固收','固收+'].map(x=>tabBtn(x,'全部')).join('')}</div>${body}<p class="mobile-footer-note">当前视图：${esc(view)}。业绩比较基准不代表预期收益；可售状态取自服务端 sale_status。</p>`;
+  }
+  return `<div class="eyebrow">WEALTH PRODUCT</div><h1>理财产品</h1><p class="sub">按风险、期限和流动性找到适合的产品。</p><div class="mobile-tags">${['全部','现金管理','固收','固收+'].map(x=>tabBtn(x,'全部')).join('')}</div>${list.map(wealthCard).join('')}<p class="mobile-footer-note">当前视图：${esc(view)}，共 ${list.length} 只，来自 GET /api/demo-data。业绩比较基准不代表预期收益；可售徽章只读服务端 sale_status。</p>`;
 }
 function mobileDeposit(){
   const dep=productOf('deposit')||{};
@@ -934,15 +1114,42 @@ function mobileCandidates(){
   const compared=s.compareSet||[];
   const calc=s.candidateCalculation||null;
   const reasons=Array.isArray(calc?.reasons)?calc.reasons:[];
-  // Reasons and order come from the server candidateCalculation, never from
-  // fixed copy such as "适配你的资金期限".
-  const list=ids.map((id,i)=>{
+  // P-16: the constraint line is read from candidateCalculation.reasons[].constraints
+  // and holding_months; the old fixed copy「适配你的资金期限」is gone. The same
+  // reason table also drives the ranking, so order and copy share one source.
+  const orderedReasons=reasons.filter(r=>ids.includes(r?.product_id));
+  const rankedIds=orderedReasons.length?orderedReasons.map(r=>r.product_id):ids;
+  const reasonOf=(id)=>reasons.find(r=>r?.product_id===id)||null;
+  const monthsText=(months)=>{const n=numOrNull(months); return n==null||n<=0?'':`${Number.isInteger(n)?n:n.toFixed(1)} 个月`;};
+  const constraintsText=(entry)=>{
+    const c=entry?.constraints||{};
+    const parts=[];
+    const holdMonths=monthsText(entry?.holding_months);
+    if(holdMonths) parts.push(`持有期 ${holdMonths}`);
+    if(c.goal_term) parts.push(`目标期限 ${c.goal_term}`);
+    if(c.goal_liquidity) parts.push(`流动性需求「${c.goal_liquidity}」`);
+    if(c.customer_risk||c.goal_risk) parts.push(`风险 客户 ${c.customer_risk||'—'} / 目标 ${c.goal_risk||'—'}`);
+    if(c.sale_status) parts.push(`可售状态 ${c.sale_status}`);
+    return parts.join(' · ');
+  };
+  const REASON_LABEL={risk_term_liquidity_sale_checked:'风险、期限、流动性与可售状态均通过校验',holding_period_exceeds_liquidity_or_term:'持有期超过流动性需求或目标期限',risk_above_customer:'风险等级高于客户风险等级',risk_above_goal:'风险等级高于目标风险等级',not_on_sale:'产品不可售',risk_level_unknown:'风险等级缺失'};
+  const rankText=(id)=>{
+    const entry=reasonOf(id);
+    if(!entry) return '';
+    const pos=rankedIds.indexOf(id);
+    const holdMonths=numOrNull(entry.holding_months);
+    const rankPart=pos>=0?`第 ${pos+1} 条（风险档由低到高、同档按 product_id）`:'';
+    return [rankPart,holdMonths!=null&&holdMonths>0?`持有期 ${monthsText(entry.holding_months)}`:'',REASON_LABEL[entry.reason]||entry.reason||''].filter(Boolean).join(' · ');
+  };
+  const list=rankedIds.map((id,i)=>{
     const p=productOf(id)||{};
     const inSet=compared.includes(id);
-    const reason=reasons.find(r=>r?.product_id===id)?.reason||'';
-    return `<div class="mobile-product"><div class="between"><div><span class="badge ${i===1?'blue':''}">${esc(p.risk||'')} · ${esc(p.role||'')}</span><h3>${esc(p.name||id)}</h3></div><b class="text-blue" style="font-size:20px">${esc(p.match||'')}</b></div><div class="product-meta">${esc(p.ret||'—')} 近一年 · ${esc(p.drawdown||'低波动')} 最大回撤</div><p class="muted">推荐理由：${esc(reason||'服务端未返回该候选的理由')}</p><div class="between"><button class="btn small" data-action="m-candidate-reason" data-product="${esc(id)}">查看理由</button><button class="link-btn" data-action="m-compare-add" data-product="${esc(id)}">${inSet?'已加入比较':'加入比较'}</button></div></div>`;
+    const entry=reasonOf(id);
+    const constraints=constraintsText(entry);
+    const fallback=calc?'服务端 candidateCalculation 未返回该候选的约束':'服务端尚未返回 candidateCalculation（候选需由 generate_candidates 写入），本页不展示固定口径的适配理由';
+    return `<div class="mobile-product"><div class="between"><div><span class="badge ${i===1?'blue':''}">${esc(p.risk||'')} · ${esc(p.role||'')}</span><h3>${esc(p.name||id)}</h3></div>${p.latest_return==null?'':`<b class="text-blue" style="font-size:20px">${esc(p.ret||'')}</b>`}</div><div class="product-meta">${esc(p.drawdown?`${p.drawdown} 近一年最大回撤`:'近一年最大回撤未提供')}</div><p class="muted">排序依据：${esc(rankText(id)||fallback)}</p><p class="muted">约束：${esc(constraints||fallback)}</p><div class="between"><button class="btn small" data-action="m-candidate-reason" data-product="${esc(id)}">查看理由</button><button class="link-btn" data-action="m-compare-add" data-product="${esc(id)}">${inSet?'已加入比较':'加入比较'}</button></div></div>`;
   }).join('');
-  return `<div class="eyebrow">PRODUCT MATCH</div><h1>候选推荐</h1><p class="sub">根据你的目标，先给出 3 个方向，再由你确认。</p><div class="callout">已使用：${esc(goalText())}${s.plan?' · 已关联配置方案':''}</div>${s.plan?`<div class="callout good">方案占比：现金 ${s.plan.cash}% · 固收 ${s.plan.bond}% · 权益 ${s.plan.equity}% · 保障 ${s.plan.protection}%</div>`:''}${list||`<div class="card"><p>尚未生成真实候选。请先完成资产配置并生成候选，系统不会补入默认产品。</p>${btn('去做资产配置','go-allocation','primary full')}</div>`}<p class="mobile-footer-note">候选排序与理由取自服务端 candidateCalculation；排序不替代适当性结论和客户经理判断。</p>${compared.length?`<div class="path-next">${btn(`查看比较（${compared.length}）`,'go-compare','primary full')}</div>`:''}`;
+  return `<div class="eyebrow">PRODUCT MATCH</div><h1>候选推荐</h1><p class="sub">根据你的目标，给出候选方向，再由你确认。</p><div class="callout">已使用：${esc(goalText())}${s.plan?' · 已关联配置方案':''}${calc?.calculation_id?` · candidateCalculation ${esc(calc.calculation_id)}`:''}</div>${s.plan?`<div class="callout good">方案占比：现金 ${s.plan.cash}% · 固收 ${s.plan.bond}% · 权益 ${s.plan.equity}% · 保障 ${s.plan.protection}%</div>`:''}${list||`<div class="card"><p>尚未生成真实候选。请先完成资产配置并生成候选，系统不会补入默认产品。</p>${btn('去做资产配置','go-allocation','primary full')}</div>`}<p class="mobile-footer-note">候选排序、排序依据与约束均取自服务端 candidateCalculation.reasons[]（constraints / holding_months）；未返回的字段显示「未提供」，不使用固定口径文案。排序不替代适当性结论和客户经理判断。</p>${compared.length?`<div class="path-next">${btn(`查看比较（${compared.length}）`,'go-compare','primary full')}</div>`:''}`;
 }
 function mobileCompare(){
   const s=session();
