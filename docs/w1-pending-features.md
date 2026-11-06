@@ -12,7 +12,7 @@
 | DEMO 验收标准 | 架构文档 V2.3 第 11 章 A01–A35，是 DEMO 的通过条件；本清单的「职责页」与「关联 A 项」只做交叉索引 |
 | 台账 | 架构文档附录 A（R2–R62 逐条承载与判定归属），本清单不复制其表格 |
 | 本文性质 | 需求侧完成条件与验收归属；**不含测试代码**，不新增运行页面，不改 `CONTEXT.md`、`README.md`、架构文档、`tests/`、`src/`、`public/`、`scripts/`、`.github/`、`package.json` |
-| 基线 | `origin/main` = `9411ead`（波次 3 合并后；本清单首版写于基线 `53eb19c`，波次 1 后校正为 `d0b7620`，波次 3 起校正为 `cf07b1b`，波次 4 起校正为 `9411ead`，均见 §0.3 / §0.4 / §0.5）。所列「当前演示态」均为该基线上 `public/app.js`、`public/actions/*.js` 与 `src/` 的**代码事实**，不是人工观感描述 |
+| 基线 | `origin/main` = `5bcb1cc`（波次 4 合并后；本清单首版写于基线 `53eb19c`，波次 1 后校正为 `d0b7620`，波次 3 起校正为 `cf07b1b`，波次 4 起校正为 `9411ead`，波次 5 起校正为 `5bcb1cc`，均见 §0.3 / §0.4 / §0.5 / §0.6）。所列「当前演示态」均为该基线上 `public/app.js`、`public/actions/*.js` 与 `src/` 的**代码事实**，不是人工观感描述 |
 
 ### 0.3 基线校正与波次 1 收工登记（2026-11-05 复核）
 
@@ -60,6 +60,31 @@
 - **#17 不等于 P-04 / P-15 / P-17 达标**：页面已改接服务端读数，但`DATA_MODE=database` 下 PostgreSQL `NUMERIC` 列以字符串返回（`holdings.amount` / `holdings.return_rate` 为 `"168420"` / `"0.1842"`；`products.annual_rate` 同样为 `NUMERIC` 列，按代码事实亦以字符串返回）。`portfolioCalculation.js` 的 `Number.isFinite(holding.amount)` 校验因此拒绝该输入 → `GET /api/calculations/portfolio` 返回 422 `INSUFFICIENT_EVIDENCE`（#14 已复测登记）。存款端点上 `depositCalculation.js` 的 `parseNumber` 可解析数字字符串，但 #17 页面侧对字符串利率不自行换算、原样交由服务端判定，**该分支在真库下能否达成成功态未经真库验证**，页面为防御式实现，因此本清单不把它记为成功态可达。**真库下这三页的成功态不可达**，该归一化由波次 4 的 `backend` 处理；在归一化落地并补成功态用例之前，P-04 / P-15 / P-17 仍计「未完全达标」，**不得虚减缺口数**。
 - 波次 3 的 #15 属测试补齐、#16 属文档口径，均不改变页面运行行为，**不冲减任何缺口**；#17 虽改接了页面读数，但成功态不可达，同样**不冲减**（详见 §1.1「追加细分行（仅作排期参考，不冲减前四行）」）。
 
+### 0.6 波次 4 收工登记与基线推进（2026-11-06，基线 `5bcb1cc`）
+
+波次 4 已合并 4 个 PR，实际合并顺序为 **#18（`39147e4`）→ #19（`4c2bcda`）→ #21（`6fcdb0e`）→ #20（`5bcb1cc`）**；基线由 `9411ead` 推进到 **`5bcb1cc`**（#20 的合并提交，`git log --oneline 4c2bcda..5bcb1cc` 只有 `6fcdb0e` 与 `5bcb1cc` 两条）。本节只登记「服务端与页面已具备的前提」「已撤回的旧判断」与「仍不构成达标的部分」；判定尺度沿用 §0.4 / §0.5：**条目整体闭环 = 页面读数与服务端事实一致 + 成功态可达 + 成功/失败/空三态用例齐备**，缺一项即仍计待办。
+
+| PR | 类型（owner） | 收工项 / 前提（对应本清单条目） |
+|---|---|---|
+| #18 | backend（`backend`） | **真库 `NUMERIC` 归一化**：新增 `src/platform/numeric/numericValue.js`（只接受有限 `number` 或十进制文本，`null`/空串/`1e3`/`0x10`/`Infinity`/布尔/对象一律 400 `VALIDATION_ERROR`，不静默当 0 或 null）与 `DataValueError extends ValidationError`（`src/platform/http/errors.js`）；`PortfolioService.calculate()` 在进入确定性计算前归一 `holdings.amount`（必填、`0 ≤ amount ≤ 1e12`）与 `holdings.return_rate`（允许 `NULL`＝收益估算不可用，存在却非数字 → 400），与 fixture 数字输入的结果逐字段一致（`calculation_id`、`total_amount`、`weights`、`max_concentration`、`equity.max_concentration`、`holding_return` 不变）。`BusinessRulesService.calculateDeposit()` 入口本已可解析 `"0.0215"` / `"2.15"`，本 PR 只补入口契约注释。**这是 P-04 / P-15 / P-17 页面成功态的「服务端侧」前置**：真库只读计算端点不再因字符串输入返回 422，**但页面能否在真库下取得成功态仍取决于页面侧三态用例（未补，见 §1.1）**。冻结集合未触碰；该归一化只覆盖只读计算入口，`aiOrchestrator` 证据包路径（§3 P-12 的 `diagnosis_explain`）**未在 #18 处理**（#18 描述「风险 / 后续」自述），属仍待办项。 |
+| #19 | docs（`docs`） | 波次 3 进度登记与**波次 4 / 5 排期**（§0.5、§1.1、§8「波次 3 决策记录」的波次 4 补充、§11、§12）。本 PR 的 §11 登记位与 §12 排期即为本波次的排期依据；本清单的缺口基数口径**不因 #19 改变**（纯文档，不冲减）。 |
+| #20 | frontend-diagnosis（`frontend-diagnosis`） | **P-13 保险动作改接真实保单事实**：`public/actions/diagnosis.js` 的 `m-coverage` / `m-policy` 不再对任何点击打开同一固定弹窗「安享长期医疗 ¥4,000,000」，改为按被点击元素的 `data-product` 从共享会话（`GET /api/demo-data` 的产品快照）读取该保险产品的 `coverage` / `annual_premium` / `sale_status` / `source_id` / `source_timestamp`，逐产品渲染「保险产品事实」，**不伪造保单号、生效日期与理赔进度**；无 `product_id`、快照中没有该产品、或所点对象不是保险产品时，一律显式空态「未授权或暂无可展示保单」，**无来源显式空态**；pg `NUMERIC` 字符串按文本原样展示，浏览器不做换算。同一 PR 的 **P-12 附带修复**：`m-diagnose` 删除 `productId \|\| 'fund'` 的静默改诊，缺 id / 未知 id 改显式空态。**未完成**：`422 INSUFFICIENT_EVIDENCE` → 「当前客户无该产品持仓，无法生成诊断」文案仍未实现（`runRealAiTask` 在 `public/app.js` 内自行 `catch` 并 `openLanding('ai-error')`，属 `frontend-lead` owner 范围，#20 已注明为后续项）。 |
+| #21 | frontend-lead（`frontend-lead`） | **把 6 个 P 类页面的硬编码改为 `/api/demo-data`（与 `GET /api/knowledge`）的服务端事实**：P-02 `pc/product-fund`（产品卡片、费率/区间收益/回撤/可售状态/来源/时点取自 `products[]`；「观察区间」真正改变数据——非「近一年」为显式空态「该区间暂无数据」；净值/规模/持仓与行业分布/基金经理等未返回字段列为「未提供」）、P-03 `pc/product-insurance` + `pc/product-wealth`（产品行与事实字段改用服务端快照，新增可售状态列；保单板块 → 「未授权或暂无可展示保单」；理财页静态「注册资本 50 亿 / 在管规模 1,280 亿」已删除）、P-06 `pc/supply`（4 行硬编码供给与计数删除，供给行改取产品行；资讯/策略无来源显式空态）、P-08 `pc/library`（5 行硬编码目录与计数删除，卡片回指 `products[]`，知识版本/片段数取 `GET /api/knowledge` 投影；`GET /api/demo-data` 失败 → 「共享数据加载失败」）、P-14 `m/wealth`（「我行可售」徽章改只读 `sale_status`，缺失显示「可售状态未提供」）、P-16 `m/candidates`（固定文案「适配你的资金期限」删除，排序与理由同取 `candidateCalculation.reasons[].constraints` 与 `holding_months`）。**未完成**：P-02 仍无「近三年 / 成立以来」数据来源与规模/持仓分布字段；P-03 保单板块、P-06 资讯/策略供给、P-08 观点资产与审核状态均仍缺服务端来源；P-16 的 `score` 排序字段仍以 `reasons[]` 顺序呈现而非独立可复算分值；三态 E2E 用例未补。 |
+
+**已撤回的旧判断（基线 `5bcb1cc`）**
+
+- 「真库下 `GET /api/calculations/portfolio` 恒 422、存款端点成功态未经真库验证」：**服务端侧已撤回**——#18 在入口归一 `holdings.amount` / `return_rate`，存款端点对 `"0.0215"` / `"2.15"` 本就可解析；**但页面侧三态用例仍缺，故 P-04 / P-15 / P-17 的「达标」判断不变，仍计未完全达标**。
+- 「`m-coverage` / `m-policy` 只开同一个固定弹窗」：**已撤回**——#20 已改为按被点击产品渲染，并为缺 id / 未知 id / 非保险目标提供显式空态（「两张保单内容不同」在无保单数据源前仍无法真实达成，见 §3 P-13）。
+- 「`catalog.fund` / `catalog.insurance` / `catalog.wealth` 硬编码 3 只产品」「`pageSupply()` 4 行硬编码」「`pageLibrary()` 5 行硬编码」「`wealthCard()` 徽章不看 `sale_status`」「`m/candidates` 固定文案『适配你的资金期限』」：**均已撤回**——#21 已改为服务端快照驱动（未返回字段为「未提供 / 空态」，不以演示值补齐）。
+
+**基线校正要点（`5bcb1cc`）**
+
+- **冻结集合未变**：#18 只改 `src/components/business-rules/`、`src/components/demo-data/`、`src/platform/` 三个目录（36 key / 19 PATCH / 7 命令 / 11 `downstreamReset` 零改动，`tests/unit/session-contract.test.js` 断言未改）；#19、#21 为纯文档/前端；#20 只改 `public/actions/diagnosis.js`。
+- **#21 的 6 个 P 类页面改接不等于达标**：§1.1「逐页严格达标」要求「成功态 + 三态用例齐备」才计入；本波次**没有任何 P 类页三态 E2E 用例入库**（E2E 仍为 9 用例 × 2 工程 = 15 次运行），因此 #21 冲减 0 页。
+- **#18 不等于 P-04 / P-15 / P-17 达标**：服务端入口归一化只是「页面能拿到成功态」的前提；页面成功态仍需在真库 + 三态用例下验证。
+- **#20 不等于 P-13 达标**：动作层已改接真实产品事实并交齐「无来源空态」，但保单数据源仍缺（§8.1 第 6 项仍需 `data` 提供保单表），列表页与保单内容差异用例未补，**仍计未完全达标**。
+- **本波次属「已推进 · 波次 4」的条目**（原条目不删除，在下文对应条目追加标注）：P-02、P-03、P-04、P-06、P-08、P-12、P-13、P-14、P-15、P-16、P-17。
+
 ### 0.1 真实模型与 fixture 的表述边界
 
 W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，模型名为 `fixture-generate-1` / `fixture-deterministic-1536`，页面显示「演示桩 fixture」。因此：
@@ -84,33 +109,33 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 |---|---|---|---|---|---|---|
 | 1 | `pc/architecture` | PC 工作台 | P-01 | `pageArchitecture()` 的 KPI 与流程摘要为硬编码 | 数据源未接 `/api/health`、`/ready` | A13、A30 |
 | 2 | `pc/workspace` | PC 工作台 | H-01 | 研究回答卡来自服务端，其余为演示待办 | 硬编码任务；`research-plan` 结果页为静态事实 | A03、A19、A34 |
-| 3 | `pc/product-fund` | PC 产品洞察 | P-02 | `catalog.fund` 硬编码 3 只基金，非 `/api/demo-data` | 产品事实无服务端来源 | A02、A08、A19 |
-| 4 | `pc/product-insurance` | PC 产品洞察 | P-03 | `catalog.insurance` 硬编码 | 同上；「我的保单」「理赔」「通识」三板块静态 | A02 |
-| 5 | `pc/product-wealth` | PC 产品洞察 | P-03 | `catalog.wealth` 硬编码 | 同上 | A02 |
-| 6 | `pc/product-deposit` | PC 产品洞察 | P-04 | 产品事实来自 `/api/demo-data`；测算已改读 `GET /api/calculations/deposit`（**已推进 · 波次 3 · PR#17**）。**真库（`DATA_MODE=database`）下 `annual_rate` 为 pg `NUMERIC` 字符串，只读端点返回 422，页面只能显示防御式失败态** | 真库成功态不可达（待波次 4 backend 归一化）；页面固定本金 500000 / 3 年、期限切换与逐期限空态未补；成功态用例缺失 | A08 |
+| 3 | `pc/product-fund` | PC 产品洞察 | P-02 | `productPage('fund')` 的产品卡片、费率/区间收益/回撤/可售状态/来源/时点已取自 `GET /api/demo-data`，「观察区间」切换真正改变数据（**已推进 · 波次 4 · PR#21**） | 近三年/成立以来无数据来源（显式空态）；规模、持仓与行业分布、基金经理未返回；三态用例缺失 | A02、A08、A19 |
+| 4 | `pc/product-insurance` | PC 产品洞察 | P-03 | 产品行与事实字段改读服务端快照，「我的保单」板块改为「未授权或暂无可展示保单」空态（**已推进 · 波次 4 · PR#21**） | 保单数据源缺失；三态用例缺失 | A02 |
+| 5 | `pc/product-wealth` | PC 产品洞察 | P-03 | 产品行与事实字段改读服务端快照，静态「注册资本 / 在管规模 / 审计日」已删除（**已推进 · 波次 4 · PR#21**） | 管理人字段无服务端来源；三态用例缺失 | A02 |
+| 6 | `pc/product-deposit` | PC 产品洞察 | P-04 | 产品事实来自 `/api/demo-data`；测算已改读 `GET /api/calculations/deposit`（**已推进 · 波次 3 · PR#17**）；真库 `NUMERIC` 字符串在服务端入口已归一（**已推进 · 波次 4 · PR#18**） | 页面固定本金 500000 / 3 年、期限切换与逐期限空态未补；真库成功态与三态用例仍缺 | A08 |
 | 7 | `pc/product-private` | PC 产品洞察 | P-05 | 整页为 `pageProductPrivateRestricted()` 受限提示。**已推进 · 波次 3**：认定状态与受限产品定为只读派生投影（不进会话状态） | 无认定状态、无产品数据；页面尚未消费派生投影 | A10、A13 |
 | 8 | `pc/candidates` | PC 产品洞察 | H-02 | 候选来自 `session.candidates`；**变更**：`d0b7620` 起候选资格/理由/排序由 `candidateCalculation` 给出（`reason`、`constraints`、`holding_months`），`match` 已恒为 `—`（`session-sync.js` 覆盖产品字段） | 无候选时缺**专用引导**空态（现仅表体缺省行）；`score` 仍缺服务端字段，排序值不可复算 | A06、A48 |
 | 9 | `pc/compare` | PC 产品洞察 | H-03 | 比较集来自 `session.compareSet`；**变更**：`comparisonBasis`/`compareBasis()` 已产出确定性口径（`type`+`risk`+`benchmark`）与 `comparable`/`incomparable_reason` | 前端未消费该口径：`m/compare` 固定结论文案仍在、口径切换只改行标签（见 H-03） | A07 |
-| 10 | `pc/supply` | PC 财富投研 | P-06 | 行数组与 `metric()` 硬编码 | 无 `/api/demo-data` 来源 | A02、A13 |
+| 10 | `pc/supply` | PC 财富投研 | P-06 | 4 行硬编码供给与 `metric()` 计数已删除，供给行改取 `GET /api/demo-data` 产品行（**已推进 · 波次 4 · PR#21**） | 资讯 / 策略 / 行业观点无服务端来源（显式空态）；三态用例缺失 | A02、A13 |
 | 11 | `pc/research` | PC 财富投研 | H-04 | `research_qa` 真实，回答/错误卡片已接 | 重复提问无状态提示 | A09、A18、A57 |
 | 12 | `pc/events` | PC 财富投研 | P-07 | `researchPage('events')` 静态列表 | 无服务端来源与三态 | A02、A11 |
 | 13 | `pc/macro` | PC 财富投研 | P-07 | 同上 | 同上 | A02、A11 |
 | 14 | `pc/industry` | PC 财富投研 | P-07 | 同上 | 同上 | A02、A11 |
-| 15 | `pc/library` | PC 财富投研 | P-08 | 产品智库里 5 行硬编码 | 未接 `/api/demo-data`、`/api/knowledge` | A02、A20 |
+| 15 | `pc/library` | PC 财富投研 | P-08 | 5 行硬编码目录与计数已删除，卡片回指 `products[]`，知识版本/片段取 `GET /api/knowledge` 投影（**已推进 · 波次 4 · PR#21**） | 观点资产与审核状态无服务端字段（已移出表格）；三态用例缺失 | A02、A20 |
 | 16 | `pc/reader` | PC 财富投研 | P-09 | 5 章内容硬编码；`summary` 常因缺 `document_id` 拒绝 | 正文与 `doc-*` 无绑定 | A20、A53 |
 | 17 | `pc/writing` | PC 财富投研 | P-10 | 3 类写作品类与 QC 徽章硬编码 | 草稿状态不持久 | A11、A54 |
 | 18 | `pc/result` | PC 公共结果 | P-11 | `landingSpec` 53 条映射；含假数据项 | 注销了假成功，但版本/权限为空 | A11、A13 |
 | 19 | `m/assistant` | 手机主流程 | H-05 | `assistant_qa` 真实 | 「2 条持仓提醒」硬编码；无多轮 | A14、A14b、A03 |
-| 20 | `m/fund` | 手机主流程 | P-12 | 4 条基金硬编码；仅 A500 可诊基 | 硬编码产品无法映射 `product_id` | A08、A19、A10 |
-| 21 | `m/insurance` | 手机主流程 | P-13 | 整页硬编码；`m-coverage`/`m-policy` 只开固定弹窗。**已推进 · 波次 3**：保单/缺口定为只读派生投影，无来源时显式空态、不伪造 | 无保单数据源；派生投影覆盖面有限（只含产品事实可确定字段） | A08、A10 |
-| 22 | `m/wealth` | 手机主流程 | P-14 | `wealthCard()` 来自 `productOf`（真实产品） | `wealth`/`cash` 无知识片段 | A08、A10 |
-| 23 | `m/deposit` | 手机主流程 | P-04 | 到期本息由前端 `updateDeposit()` 计算 | 计算未由服务端权威 | A08 |
+| 20 | `m/fund` | 手机主流程 | P-12 | 4 条基金硬编码；仅 A500 可诊基。**已推进 · 波次 4 · PR#20**：`m-diagnose` 删除 `productId \|\| 'fund'` 静默改诊，缺 id / 未知 id 显式空态 | 列表仍为前端硬编码（不映射 `product_id`）；`422 INSUFFICIENT_EVIDENCE` 专用文案未实现（`runRealAiTask` 自 catch → `ai-error`） | A08、A19、A10 |
+| 21 | `m/insurance` | 手机主流程 | P-13 | `m-coverage`/`m-policy` 按被点击产品渲染服务端保险事实、无来源显式空态（**已推进 · 波次 3、波次 4 · PR#20**） | 列表页保障缺口与待办仍无真实来源；无保单数据源，「两张保单内容不同」无法达成 | A08、A10 |
+| 22 | `m/wealth` | 手机主流程 | P-14 | `wealthCard()` 来自 `productOf`（真实产品）；「我行可售」徽章改只读 `sale_status`、缺失显示「可售状态未提供」（**已推进 · 波次 4 · PR#21**） | `wealth`/`cash` 无知识片段；三态用例缺失 | A08、A10 |
+| 23 | `m/deposit` | 手机主流程 | P-04 | 到期本息已改读 `GET /api/calculations/deposit`（**已推进 · 波次 3 · PR#17**），服务端入口已归一真库字符串（**已推进 · 波次 4 · PR#18**） | 真库成功态与三态用例仍缺 | A08 |
 | 24 | `m/private` | 手机主流程 | P-05 | 受限页 + `m-contact`（`contactTodo`） | 无认定状态与未认定/已认定分叉 | A10、A13 |
 | 25 | `m/allocation` | 手机主流程 | H-06 | `rule_match` → `generate_allocation` → `generate_candidates` 已真实闭环（`cf07b1b` 实测默认目标产出 `allocation-balanced-r3`） | 两类失败态（`UNSUPPORTED_RULE`、`NEED_CONFIRMATION`）**共用** `rule-confirmation` 结果页；`NEED_CONFIRMATION` 在表单恒有默认值时不可达 | A04、A05、A24 |
-| 26 | `m/holdings` | 手机主流程 | P-15 | 持有收益/贡献/集中度已改读 `GET /api/calculations/portfolio`，双分母分别标注（**已推进 · 波次 3 · PR#17**）。**真库下 `holdings.amount` 为 pg `NUMERIC` 字符串，端点返回 422 `INSUFFICIENT_EVIDENCE`，页面只能显示「服务端计算失败」** | 真库成功态不可达（待波次 4 backend 归一化）；复算用例与空态用例未补 | A08、A10 |
-| 27 | `m/candidates` | 手机主流程 | P-16 | 候选来自服务端；「适配你的资金期限」硬编码；**变更**：`cf07b1b` 起 `candidateCalculation.reasons[]` 已带 `constraints` 与 `holding_months`（`d0b7620` 引入，波次 2 前已生效），文案与排序同源已具备前提 | 页面固定文案未改用 `reasons[].constraints` | A06、A48 |
+| 26 | `m/holdings` | 手机主流程 | P-15 | 持有收益/贡献/集中度已改读 `GET /api/calculations/portfolio`，双分母分别标注（**已推进 · 波次 3 · PR#17**）；真库 `holdings.amount` / `return_rate` 在服务端入口已归一（**已推进 · 波次 4 · PR#18**） | 真库成功态未经页面用例确认；复算用例与空态用例未补 | A08、A10 |
+| 27 | `m/candidates` | 手机主流程 | P-16 | 候选来自服务端；固定文案「适配你的资金期限」已删除，排序依据与约束改取 `candidateCalculation.reasons[].constraints` / `holding_months`（**已推进 · 波次 4 · PR#21**） | 排序以 `reasons[]` 顺序呈现，仍无独立可复算 `score` 字段；三态用例缺失 | A06、A48 |
 | 28 | `m/compare` | 手机主流程 | H-03 | 同上；「历史收益更高…」为固定文案 | 固定结论文本 | A07、A45 |
-| 29 | `m/companion` | 手机主流程 | P-17 | `+0.86%`、`68%` 等硬编码已移除，复盘数字改读 `GET /api/calculations/portfolio` 并标注「演示数据 · AI_MODE=fixture」（**已推进 · 波次 3 · PR#17**）；`R3` 改取会话目标 | 真库下端点 422 → 复盘数字只能显示失败态；收益金额/收益率取自 `estimated` 口径、仅标「估算」，服务端未产出「目标完成度」与「风险仍在 R3」对应字段（风险等级改取会话目标）；`m-event` 仍为固定文本 | A08、A11、A50 |
+| 29 | `m/companion` | 手机主流程 | P-17 | `+0.86%`、`68%` 等硬编码已移除，复盘数字改读 `GET /api/calculations/portfolio` 并标注「演示数据 · AI_MODE=fixture」（**已推进 · 波次 3 · PR#17**）；服务端入口已归一真库字符串（**已推进 · 波次 4 · PR#18**）；`R3` 改取会话目标 | 收益金额/收益率取自 `estimated` 口径、仅标「估算」，服务端未产出「目标完成度」与「风险仍在 R3」对应字段（风险等级改取会话目标）；`m-event` 仍为固定文本；三态用例未补 | A08、A11、A50 |
 | 30 | `m/result` | 手机公共结果 | P-11 | 复用 `landingBody()` | 同 P-11 | A11 |
 
 合计：**P 类 17 页**（P-01…P-17），**H 类 13 页**（H-01…H-06，其中 H-03 同时覆盖 `pc/compare`、`m/compare`）。`pc/result` 与 `m/result` 共用 P-11。
@@ -175,6 +200,45 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 
 说明：`pc/architecture` 在 `CONTEXT.md` 中属于 PC 工作台闭环，冻结的闭环清单（手机：助手→持仓→诊断→配置→候选→比较→陪伴；PC：工作台/研究→产品解释→候选→比较→保存）未单列它，因此按接口状态页补，按 A13/A30 验收，不额外新增指标。
 
+### 1.2 波次 4 后缺口基数重算（基线 `5bcb1cc`，2026-11-06）
+
+> 新增 2026-11-06：本节在 §1.1 之后补入，承接其前四行口径。本节是 §1.1 的**波次 4 后唯一有效基数**；§1.1 的 `9411ead` 表保留追溯，仅在被引用处按本节重新取值。判定口径未变：**「成功态 + 三态用例齐备」才计入达标，仅删假值、仅改接读数、仅做类型归一化都不冲减。**
+
+| 口径（基线 `5bcb1cc`） | P 类 | H 类 | 合计 |
+|---|---|---|---|
+| 条目总数（按定义） | 17 页（P-01…P-17） | 6 组 / 13 页（H-01…H-06） | **23 条目 / 30 路由** |
+| 已收工（设计条目整体闭环） | 0 | 0 | **0** |
+| 已收工（单项缺口，见下） | 2 | 1 | **3** |
+| 剩余待办条目 | 17 | 6 | **23** |
+| 剩余待办单项缺口 | 31 | 14 | **45** |
+| ├ 其中：已改接服务端读数、但真库成功态或三态用例未确认（波次 3/4 登记，**仍计入待办**） | 5：P-02 `pc/product-fund`、P-04 `pc/product-deposit`、P-08 `pc/library`、P-15 `m/holdings`、P-17 `m/companion` | 1：P-14 `m/wealth` | **6** |
+| ├ 其中：页面主体改接服务端事实、空态已交，但数据源仍缺（**仍计入待办**） | 3：P-03 `pc/product-insurance` + `pc/product-wealth`（保单/管理人来源）、P-06 `pc/supply`（资讯/策略来源）、P-13 `m/insurance`（保单来源） | 2：P-04 `m/deposit`、P-16 `m/candidates` | **5** |
+| ├ 其中：口径已由只读端点/派生投影覆盖、页面完全未接线（波次 3 登记，波次 4 未变化） | 1：P-05 `pc/product-private` | 2：P-05 `m/private`、P-12 `m/fund` | **3** |
+| ├ 其中：明确滞后且需状态契约 owner 批准的缺口（§8.1 第 3、7 项） | 1 | 0 | **1** |
+| └ 其中：纯页面侧、无契约与数据源前置的缺口 | 21 | 9 | **30** |
+
+**本期冲减：0 项（与波次 3 后一致：条目 0 / 23 已收工、23 待办；单项缺口 3 已收工、45 待办，合计 48）**。理由逐条登记：
+
+1. **#18（backend 归一化）不冲减**：它只让只读计算端点在真库下能返回成功态，属类型层修复；P-04 / P-15 / P-17 的页面成功态与三态用例仍未入库。
+2. **#20（保险动作）不冲减 P-13**：动作层已按被点击产品渲染真实产品事实并无来源空态，但保单数据源（§8.1 第 6 项）仍缺，「两张保单内容不同」无法真实达成，列表页缺口与待办也未来源化。
+3. **#21（6 个 P 类页面改接）不冲减**：页面读数已改，但三态 E2E 用例未补（见下「E2E 覆盖口径」）；按 §1.1 的尺度仍计待办。
+4. **#19 为纯文档（不冲减）**，且 #19 本身的 §11 误把「波次 3 进度登记」记为 #18（应为 #19），本 PR 已在 §11 更正并保留原文。
+
+**波次 4 后的计数口径（不得虚报）**：P 类仍为 17 页；「已改接服务端读数」的页面由波次 3 的 3 页增至 6 页（P-02 / P-04 / P-08 / P-14 / P-15 / P-17），但**这 6 页没有一页交齐三态用例**，因此「逐页严格达标」恒为 `0 / 30`。原 §1.1 细分行①「已完成页面改接但真库成功态不可达」的表述按本期更新为「已改接、真库成功态或三态用例未确认」；细分行②「口径已覆盖、页面未接线」由 3 项降为：P 侧 1 项（P-05 PC）、H 侧 2 项（P-05 手机、P-12），**P-04 `m/deposit` 已由 #17 接线**，不再属「完全未接线」。
+
+**两种完成度口径（基线 `5bcb1cc`，不得混用）**
+
+| 口径 | 当前值 | 构成 | 不得由此宣称 |
+|---|---|---|---|
+| ①「主链路闭环已通」 | **30 / 30 路由可达；E2E 15 / 15 全绿**（截至 `9411ead`，即 #17 的 6 个 job + `ci-merge-gate` 结论） | 路由白名单 30 个全部有渲染与入口；冻结的手机与 PC 两条闭环已端到端跑通；#20 / #21 的 PR 描述自述本地 `npm run test:e2e` 15/15 通过 | 不表示 30 个页面「逐页达标」 |
+| ②「30 页逐页达标」 | **0 / 30 页达标**（23 / 23 条目待办，45 / 48 单项缺口待办） | 需每个条目在 §2 模板下交齐成功/失败/空三态与真实服务端来源；「成功态 + 三态用例齐备」才算达标，**仅删假值不计数** | 不表示主链路未通；①与②互不替代 |
+
+> 口径 ① 中 `5bcb1cc` 的门禁结论**待编排器确认**：本清单作者按任务约束不得查阅或触发 CI，本期以 `9411ead` 的已合并结论 + #20 / #21 PR 描述中的本地 15/15 为准；合并后基线若与本登记不一致，以编排器回填为准。
+
+**E2E 覆盖口径（基线 `5bcb1cc`，如实登记）**：`tests/e2e` 在 `5bcb1cc` 上仍为 **9 个用例**（`contract.spec.js` 4、`work-items.spec.js` 2、`pc-flow.spec.js` 1、`mobile-flow.spec.js` 2）× 2 个 Playwright 工程（`pc` / `mobile`）= **15 次运行**，#18/#19/#20/#21 **均未新增 E2E 用例**（`git diff --stat 4c2bcda 5bcb1cc` 无 `tests/` 改动；`tests/e2e/` 仍为 5 个文件，含 `helpers.js`）。#17 改接的 3 页与 #20/#21 涉及的 9 个条目**均无成功/失败/空三态用例**，仅由 PR 描述中的人工核验与 `npm run test:e2e` 的回归作为证据，**不构成 ② 的达标证据**。E2E 扩展归波次 5（§12.2）。
+
+**服务端单元格（波次 4 后新增的前提）**：`GET /api/calculations/portfolio`（#14 暴露）在真库下对 `holdings.amount` / `holdings.return_rate` 的字符串输入由 `PortfolioService.calculate()` 入口归一（#18），非法值 400 `VALIDATION_ERROR` 并带 `field`/`reason`/`received`，不再由下游抛 422；`GET /api/calculations/deposit` 对 `"0.0215"` / `"2.15"` 均可解析。**`aiOrchestrator` 证据包路径（`m-diagnose` → `diagnosis_explain`）未归一**，真库下仍可能因字符串 `amount` 抛 422（#18 描述自述为后续项）。
+
 ## 2. 逐页填写模板（每个 W/P 条目都要交齐）
 
 领取条目时按下列字段填写，缺一项视为未完成：
@@ -224,6 +288,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **权威状态**：`products` 表（`sale_status`、`risk`、`latest_return`、`drawdown`、`annual_rate`、`fee`、`liquidity`、`source_id`、`source_timestamp`）+ `holdings`。
 - **命令/接口**：`GET /api/demo-data?session_id=`、`POST /api/ai/generate`（`task_type:'product_explain'`）。
 - **验收用例**：`tests/e2e`（字段与接口一致 + 区间切换生效 + 空态）；`tests/integration`（`product_explain` 证据含 `product:<id>`）。**已收工 · PR#9（仅证据侧）**：`structured_facts.products[]` 携带 `data_id` 与 `candidate_calculation`，`product:<id>` 可回指本次证据包；字段一致性、区间切换与空态仍待办。
+- **已推进 · 波次 4 · PR#21**：`productPage('fund')` 的产品卡片、费率、区间收益、回撤、可售状态、来源与数据时点均改读 `GET /api/demo-data` 的 `products[]`（代码事实：`serverProductRows()` + `saleStatusOf()`）；「观察区间」按 `fundIntervalFact()` 真正改变数据——只有 `近一年`（`latest_return` 口径）能展示数值，`近三年` / `成立以来` 显示显式空态「该区间暂无数据」并说明服务端没有该区间序列，**不沿用近一年数值、不画示意曲线**；`GET /api/demo-data` 失败时整块显示「共享数据加载失败」+ 真实状态码/错误码，`status !== ok` 时显示「读取中」，不展示静态行；快照未返回的字段（净值序列、规模、持仓与行业分布、基金经理、费率结构）列为「未提供 · 含原因」。**仍不达标**：① 无「近三年 / 成立以来」数据来源（空态为预期）；② 三态只有「空态」（区间）与「失败态」（快照失败）的页面呈现，**`tests/e2e` 无任何成功/失败/空断言**；③ 一页纸仍走真实 `product_explain`，未回归。**本条目标整体未收工。**
 - **关联**：A02、A08、A17、A19；R8、R43、R44（质量由行方统一评测集判定）。
 
 ### P-03 `pc/product-insurance`、`pc/product-wealth`
@@ -236,6 +301,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **权威状态**：`products` 表；保单需新增服务端来源，否则本板块降级为说明页。
 - **命令/接口**：`GET /api/demo-data`、`POST /api/ai/generate`（`product_explain`）。
 - **验收用例**：`tests/e2e`（两页各一条成功/空态）。
+- **已推进 · 波次 4 · PR#21**：两页产品行与事实字段改读服务端快照并新增「可售状态」列（`sale_status`）；保险页「我的保单与理赔服务」板块改为显式空态「未授权或暂无可展示保单」并说明保单号/生效日/续保日/理赔进度均无来源；理财页静态「注册资本 50 亿 / 在管规模 1,280 亿 / 审计日」已删除，替换为「暂未由服务端提供的字段」空态；`wealth` / `cash` 无知识片段的边界保持 §5.1 口径（不补片段）。**仍不达标**：① 保单与「管理人」字段仍无服务端来源（§8.1 第 6 项及数据接入）；② 两页**无** E2E 成功/空态用例。**本条目标整体未收工。**
 - **关联**：A02、A13、A19；R9（A/D 类）、R43。
 
 ### P-04 `pc/product-deposit`、`m/deposit`
@@ -253,6 +319,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **已推进 · 波次 3**：入口形态**已定为只读计算端点**（不新增会话命令、不改冻结集合），语义与单位口径登记于 `docs/api-contract.md`「只读计算与派生投影（W1 波次 3）」第 1 节；端点路径与参数拼写**以 contract PR 描述为准**。**本条目标整体未收工**：`pc/product-deposit` 仍用前端常量换算，`m/deposit` 与 `m-deposit-compare` 尚未改接端点，「同一产品利率唯一真值」与三态用例均待页面侧完成。
 - **已推进 · 波次 3 · PR#17**：`pc/product-deposit` 的「测算工具」与 `m/deposit` 的「到期本息测算」已改读 `GET /api/calculations/deposit`（本金 500000、3 年、`rate_unit=percent`），展示服务端 `interest` / `maturity_amount` / `formula` / `calculation_id` 与数据时点；404/501 → 「服务端计算暂不可用」，其他非 2xx → 显示服务端错误码与消息，空态「该期限暂无挂牌利率」。**仍不达标**：① 真库下产品快照 `annual_rate` 为 pg `NUMERIC` 字符串（`"0.0215"`），页面不自行换算、原样交服务端判定，成功率未经真库验证（待波次 4 `backend` 归一化，见 §12.1）；② 本金与期限仍为页面固定测算输入（非用户可选），逐期限「该期限暂无挂牌利率」分支未实现；③ `tests/e2e` 无成功态用例。**本条目标整体未收工**。
 - **验收用例**：`tests/unit`（利率/期限矩阵可复算 + 百分数单位回归——**已有**：#15 `tests/unit/deposit-calculation.test.js`）、`tests/e2e`（三档期限与两个页面的数值一致——**待补**）。
+- **已推进 · 波次 4 · PR#18**：真库下 `products.annual_rate` 以 pg `NUMERIC` 字符串返回时，`GET /api/calculations/deposit` 已可解析（`BusinessRulesService.calculateDeposit()` 入口经 `parseNumber` 处理字符串，本 PR 只补入口契约注释；`null` / 空串 / 指数写法 → 400 `VALIDATION_ERROR`，小数口径误传百分数仍被 `rate_unit` 单位防御拒绝）。**服务端侧前提已具备，但仍不达标**：① 页面固定本金 500000 / 3 年、期限切换与逐期限「该期限暂无挂牌利率」空态未补；② 真库下页面成功态**未经页面用例确认**；③ `tests/e2e` 三档期限用例仍缺。**本条目标整体未收工。**
 - **关联**：A08；R9。
 
 ### P-05 `pc/product-private`、`m/private`
@@ -279,6 +346,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **权威状态**：`activities[]`（服务端生成身份）；供给数据源待定。
 - **命令/接口**：`record_activity`（`kind:'new-supply'`）。
 - **验收用例**：`tests/unit`（`activities.test.js` 已有覆盖）、`tests/e2e`。
+- **已推进 · 波次 4 · PR#21**：`pageSupply()` 删除 4 行硬编码供给与 `metric()` 计数，供给行改取 `GET /api/demo-data` 的产品行（产品主体研究单元），每行带 `product:<id>`、来源、数据时点与可售状态；「资讯 / 策略」视图无来源 → 「当前分类暂无已审核供给（共享应用服务没有该类供给的数据来源）」显式空态；`GET /api/demo-data` 失败 → 「供给目录加载失败」。**仍不达标**：① 资讯 / 策略 / 行业观点仍无服务端来源；② `new-supply` 结果页未在本波次回归（原 `record_activity` 路径不变）；③ 无 E2E 三态用例。**本条目标整体未收工。**
 - **关联**：A02、A11、A13；R12、R38。
 
 ### P-07 `pc/events`、`pc/macro`、`pc/industry`
@@ -303,6 +371,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **权威状态**：`knowledge_versions`（ACTIVE）+ `knowledge_documents`/`knowledge_chunks`。
 - **命令/接口**：`GET /api/knowledge`、`GET /api/demo-data`。
 - **验收用例**：`tests/e2e`。
+- **已推进 · 波次 4 · PR#21**：`pageLibrary()` 删除 5 行硬编码目录与 4 个 `metric()` 计数；卡片回指 `products[]`，知识版本、文档数、片段数与每产品片段/`document_id` 取自 `GET /api/knowledge` 的只读投影（`_knowledgeStatus` / `_knowledgeDocuments` / `_knowledgeChunks`）；`GET /api/demo-data` 失败 → 「共享数据加载失败」，无知识版本 → 「暂无已发布产品知识」。**仍不达标**：① 「观点资产」「审核状态」「更新日期」无服务端字段，已从表格移除但分类仍缺；② 无 E2E 三态用例。**本条目标整体未收工。**
 - **关联**：A02、A20、A21；R12、R17。
 
 ### P-09 `pc/reader`
@@ -352,6 +421,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **权威状态**：`products` + `holdings`；`compareSet`（≤3、服务端校验存在）。
 - **命令/接口**：`GET /api/demo-data`、`POST /api/ai/generate`（`diagnosis_explain`）、`PATCH`（`compareSet`）。
 - **验收用例**：`tests/e2e`（可诊断 + 不可诊断 + 加入比较校验）。
+- **已推进 · 波次 4 · PR#20**：`m-diagnose` 删除 `const id = productId || 'fund'` 的静默改诊——缺 `product_id` 或服务端快照中不存在该 id 时显示显式空态「无法生成诊断」，**不改用其它产品代替**。**仍不达标**：① 列表仍是前端 4 条硬编码，未改接 `GET /api/demo-data`；② `422 INSUFFICIENT_EVIDENCE` → 「当前客户无该产品持仓，无法生成诊断」文案**未实现**——`runRealAiTask`（`public/app.js`）自行 `catch` 并 `openLanding('ai-error')`，属 `frontend-lead` owner 范围，需把真实错误码下推给页面；③ `diagnosis_explain` 证据包路径在真库下**未**做 `NUMERIC` 归一（#18 只覆盖只读计算入口），真库成功态未验证。**本条目标整体未收工。**
 - **关联**：A08、A10、A19；R10、R46。
 
 ### P-13 `m/insurance`
@@ -364,6 +434,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **权威状态**：需新增保单服务端来源（当前 `products` 中 `insurance` 仅产品事实，无保单/覆盖度）。
 - **命令/接口**：`GET /api/demo-data`；保单接口待定（**需数据 owner 确认，不得前端伪造**）。
 - **验收用例**：`tests/e2e`（两张保单内容不同 + 空态）。
+- **已推进 · 波次 4 · PR#20**：`m-coverage` / `m-policy`（`public/actions/diagnosis.js`）不再对任何点击打开同一固定弹窗，改为取被点击元素的 `data-product`，从共享会话（`GET /api/demo-data` 产品快照）读取该保险产品的 `coverage` / `annual_premium` / `sale_status` / `source_id` / `source_timestamp`，逐产品渲染「保险产品事实」（明确**不是保单记录**）；缺 id / 快照中无该产品 / 非保险产品 / 适配层不可用 → 一律空态「未授权或暂无可展示保单」，不套用默认额度或保费；pg `NUMERIC` 字符串按文本原样展示，浏览器不做换算。**仍不达标**：① 列表页「我的保障」覆盖度/缺口与待办仍无服务端计算来源（`mobileInsurance()` 显示「暂未发现缺口」空态）；② 无保单数据源 → 「两张保单内容不同且与服务端一致」在 `data` 提供保单表前**无法真实达成**；③ `m-policy` 已注册在 `public/actions/diagnosis.js` 并与 `m-coverage` 共用同一分支，但 `public/app.js` 内**没有任何元素带 `data-action="m-policy"`**，该动作在页面上不可达，用例仍缺；④ 无 E2E 用例。**本条目标整体未收工。**
 - **已推进 · 波次 3**：保单/缺口**已定为只读派生投影**（语义见 `docs/api-contract.md` 同节第 4 节），只输出产品事实可确定的字段（`product_id`、名称、`coverage_type`、`coverage_amount`、`annual_premium`、`sale_status`、`data_id`、`data_as_of`），**绝不伪造**保单号、生效日期、理赔进度；无来源时 `policies=[]` + `unavailable_reason`，**不改冻结集合、不新增命令**。**本条目标整体未收工**：无真实保单来源，页面仍硬编码 72% 与固定弹窗；「两张保单内容不同」的用例在无数据源前**无法真实达成**，只补空态用例不得算收工。
 - **关联**：A08、A10、A13；R9。
 
@@ -377,6 +448,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **权威状态**：`products.sale_status`。
 - **命令/接口**：`GET /api/demo-data`、`product_explain`。
 - **验收用例**：`tests/e2e`。
+- **已推进 · 波次 4 · PR#21**：`wealthCard()` 的徽章改由 `saleStatusOf()` 只读服务端 `sale_status`——`ON_SALE` → 「我行可售」，其他取值 → 「暂不可售 + 原值」，字段缺失 → 「可售状态未提供」，**不再无条件显示可售**；列表与分类计数改取 `serverProductRows('理财')`，空分类显示「当前视图暂无产品」并说明服务端只返回几只，不补默认产品；无 `latest_return` 时显示「近一年收益未提供」。**仍不达标**：① `wealth` / `cash` 无知识片段的边界仍未在页面上显式说明（§5.1 要求「本次无知识片段引用」）；② 无 E2E 三态用例。**本条目标整体未收工。**
 - **关联**：A02、A10；R9、R43。
 
 ### P-15 `m/holdings`
@@ -392,7 +464,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **验收用例**：`tests/unit`（复算）、`tests/e2e`。
 - **关联**：A08、A10；R10、R46。
 - **已推进 · 波次 3**：取数入口**已定为只读计算投影**（`PortfolioService.calculate()` 的 `calculation_id`、`total_amount`、`weights`、`max_concentration` + `max_concentration_basis`、`equity.*`、`holding_return`，语义见 `docs/api-contract.md` 同节第 2 节）；**不落会话字段、不改冻结集合**。口径红线：顶层 `max_concentration` 恒为 `basis=all_assets`（当前 41.76%），「单只宽基基金占权益资产 68%」只能读 `equity.max_concentration`（`basis=equity_assets`），两者不得互换；`holding_return.level="estimated"`，页面须标「估算」，不得回填 `+42,860.18 / 5.40%`；`unauthorized` / `no_holdings` 返回 `available=false`，页面显示「暂无持仓」而非 0 元。**本条目标整体未收工**：`m/holdings` 尚未消费该投影，复算用例与空态用例未补。
-- **已推进 · 波次 3 · PR#17**：`m/holdings` 已消费 `GET /api/calculations/portfolio`——持有收益按 `holding_return`（`level=estimated`，页面标「估算」）展示、`positions[].contribution_to_total_return` 逐笔给出、`max_concentration`（`basis=all_assets`）与 `equity.max_concentration`（`basis=equity_assets`）分别标注不可混用、展示 `calculation_id`；`available=false` 时显示「暂无持仓 / 未授权查看持仓计算」，不显示 0 元；保费不进入任何金额合计。**仍不达标**：① 真库下 `holdings.amount` / `return_rate` 为 pg `NUMERIC` 字符串，端点返回 422 `INSUFFICIENT_EVIDENCE`，页面只能显示「服务端计算失败」（待波次 4 `backend` 归一化）；② 复算用例与空态用例未补（#15 只覆盖 service 层，端到端成功态仍缺）。
+- **已推进 · 波次 3 · PR#17**：`m/holdings` 已消费 `GET /api/calculations/portfolio`——持有收益按 `holding_return`（`level=estimated`，页面标「估算」）展示、`positions[].contribution_to_total_return` 逐笔给出、`max_concentration`（`basis=all_assets`）与 `equity.max_concentration`（`basis=equity_assets`）分别标注不可混用、展示 `calculation_id`；`available=false` 时显示「暂无持仓 / 未授权查看持仓计算」，不显示 0 元；保费不进入任何金额合计。**仍不达标**：① ~~真库下 `holdings.amount` / `return_rate` 为 pg `NUMERIC` 字符串，端点返回 422 `INSUFFICIENT_EVIDENCE`~~（**已撤回 · 波次 4 · PR#18**：`PortfolioService.calculate()` 入口归一后真库可返回成功态；但真库下页面成功态仍未经页面用例确认）；② 复算用例与空态用例未补（#15 只覆盖 service 层，端到端成功态仍缺）。
 
 ### P-16 `m/candidates`
 
@@ -404,6 +476,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **权威状态**：`candidates`、`candidateCalculation`（仅由 `generate_candidates` 写入）。
 - **命令/接口**：`generate_candidates`、`POST /api/ai/generate`（`candidate_explain`）。
 - **验收用例**：`tests/integration`（`candidateCalculation` 与候选一致）、`tests/e2e`（空态）。
+- **已推进 · 波次 4 · PR#21**：`mobileCandidates()` 删除固定文案「适配你的资金期限」；每条候选展示 `candidateCalculation.reasons[].constraints`（`customer_risk` / `goal_risk` / `goal_term` / `goal_liquidity` / `sale_status`）与 `holding_months`，列表顺序按 `reasons[]`（服务端排序）呈现并标注「第 N 条（风险档由低到高、同档按 product_id）」；无 `candidateCalculation` 时显示「服务端尚未返回 candidateCalculation」，不展示固定口径理由；`p.match`（恒为 `—`）不再用于渲染，收益只在 `latest_return` 有值时才显示。**仍不达标**：① 排序以 `reasons[]` 顺序呈现，仍无独立可复算的 `score` 字段（服务端 `candidateCalculation` 未提供）；② 无 E2E 空态/成功态用例。**本条目标整体未收工。**
 - **关联**：A06、A19；R48。
 
 ### P-17 `m/companion`
@@ -415,7 +488,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **空**：无关联方案 → 「尚未关联配置方案」。
 - **权威状态**：`careSubmitted`、`remindCreated`、`plan`、`compareSaved`。
 - **命令/接口**：`create_reminder`、`submit_care`。
-- **已推进 · 波次 3 · PR#17**：`+0.86%`、`68%` 等硬编码已移除，复盘数字改读 `GET /api/calculations/portfolio` 并显式标注「演示数据 · AI_MODE=fixture」；风险等级改取会话目标（`s.risk` / `s.goal.risk`，取不到显示 `—`）。**仍不达标**：① 真库下端点 422，复盘块只能显示失败态；② 服务端未产出「目标完成度」字段，页面也不得补算；③ `m-event` 仍为固定文本；④ `tests/e2e` 未补成功/失败/空三态用例。
+- **已推进 · 波次 3 · PR#17**：`+0.86%`、`68%` 等硬编码已移除，复盘数字改读 `GET /api/calculations/portfolio` 并显式标注「演示数据 · AI_MODE=fixture」；风险等级改取会话目标（`s.risk` / `s.goal.risk`，取不到显示 `—`）。**仍不达标**：① ~~真库下端点 422，复盘块只能显示失败态~~（**已撤回 · 波次 4 · PR#18**：服务端入口归一后真库可成功；页面成功态仍未经页面用例确认）；② 服务端未产出「目标完成度」字段，页面也不得补算；③ `m-event` 仍为固定文本；④ `tests/e2e` 未补成功/失败/空三态用例。
 - **验收用例**：`tests/e2e`（提交前/后的状态 + `409` 路径；复盘数字成功/失败/空三态——**待补**）。
 - **关联**：A08、A10、A11；R50。
 
@@ -431,6 +504,16 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 | H-06 | `m/allocation` | `auth-needed` 已接；`generate_allocation` → `generate_candidates` 由服务端校验并写入。**基线校正（`d0b7620`，撤回原误判）**：规则匹配在 fixture 下**不会必然失败**——`fixtureModelClient.pickAllocationRule()` 自基线 `2d9ad15` 起即返回有效规则（默认目标 → `allocation-balanced-r3`，R1/R2 风险 → `allocation-liquid-r2`），输出带 `rule_id` 与 `rule_version`；`unselectedRuleResult()` 只在 `!output.rule_id` 分支触发，**不是主路径**。`generate_allocation` 的 `find(null, null)` → `UNSUPPORTED_RULE` 也因此不可达。`tests/e2e/helpers.js` 的 `ensureAuthorization()` 真实点击 `m-generate-allocation` 并等待「配置方案与候选已生成」，`mobile-flow.spec.js` 断言 `plan` 非空且 `candidates >= 2`；参数化后共 15 次运行（9 用例 × 2 工程）通过，候选/比较/陪伴链路在 UI 中**可达** | 仍存在的真实缺口：① `UNSUPPORTED_RULE` 与 `NEED_CONFIRMATION` **共用**结果页 `rule-confirmation`（标题「需要确认配置条件」），`UNSUPPORTED_RULE` 落在文案错位页；② `NEED_CONFIRMATION` 仅由「目标缺字段」或置信度 < 0.65 产生，而表单恒有默认值、fixture 置信度为 0.99，故该状态**不可达**；③ 现有 E2E **没有**规则不匹配失败态用例（`rule-confirmation` 路径无覆盖） | ① `UNSUPPORTED_RULE` 有独立结果页且不覆盖旧方案（A24，`d0b7620` 已在 `generate_allocation` 非 MATCHED 时返回 `patch: {}`，服务端不覆盖旧方案已成立，缺的是**页面区分**）；② 缺字段 → `rule-confirmation` 可达且文案准确；③ 补一条规则不匹配失败态用例 | `rule_match` → `generate_allocation` → `generate_candidates` | `tests/unit`（两条规则 MATCHED 与三类状态）、`tests/e2e`（默认目标生成方案 **已达**；规则不匹配失败态**待补**） | A04、A05、A24 |
 
 > H-06 收工口径：原缺口 ①「fixture 返回合法 `rule_id`」**已成立、无需 PR**（本波次校正登记，不计入待办）；原「方案永不生成 / 全链路不可达」结论**作废**，不得再作为阻塞项或验收失败依据引用。
+
+**波次 5 代码事实复核（基线 `5bcb1cc`，仅登记，不改本表原结论）**
+
+| 条目 | 复核结论（代码事实） | 证据（文件:函数/行） |
+|---|---|---|
+| H-02 `pc/candidates` | 无候选时仍是**表体缺省行**（`empty` 变量拼在 `<tbody>` 内），未变成专用引导空态；「适配度」列仍渲染 `p.match`（恒 `—`）；排序仍按 `parseFloat(p.match)` / `parseFloat(p.ret)`，**未消费 `candidateCalculation`**。候选页「生成候选池 / 同步林女士方案」两个按钮的 `generate-candidates` handler 已注册（`if(!session().plan) openLanding('allocation-needed')`），链路可达；无方案时落 `allocation-needed` 结果页，而不是本页引导空态。 | `public/app.js:746` `pageCandidates()`（`empty` 于 761 行、排序于 751–756 行）；`public/actions/research.js:20` |
+| H-03 `pc/compare`、`m/compare` | 原「『历史收益更高的产品，回撤和波动通常也更高』固定文案」在 `5bcb1cc` 上**已不在代码中**（`mobileCompare()` 的 callout 已改为「表格只列出服务端产品事实，不同口径不可直接排名」）；但**前端仍未消费 `comparable` / `incomparable_reason`**，口径切换仍只改行标签，`comparison_basis` 未渲染。**原表述「固定文案仍在」按此撤回（仅该句），条目其余缺口不变。** | `public/app.js:765` `pageCompare()`、`public/app.js:1154` `mobileCompare()`；`comparable` 与 `incomparable_reason` 在 `public/app.js` **无命中** |
+| H-04 `pc/research` | `runRealAiTask()` 每次生成新 `requestId`（`window.WealthApi.createRequestId()`），结果页 `landingSpec` 以 `L.requestId` 显示「同一 request_id 的重复提交不会生成重复结果」，但**没有「该问题已有结果」的重复提问提示**，也没有超范围问题的专门拒答文案（仍走通用 `ai-error`）。 | `public/app.js:1304–1346` `runRealAiTask()`；`public/app.js:951` request_id 提示条 |
+| H-05 `m/assistant` | 多轮上下文仍只有 `lastAnswer` 单槽（`patch({lastQuestion, lastAnswer})`），无会话级上下文；澄清机制未见入口。 | `public/actions/flow.js` `m-quick` / `m-send` 分支（`patch({lastQuestion:q,lastAnswer:{...}})`） |
+| H-06 `m/allocation` | 原三项缺口（`UNSUPPORTED_RULE` 独立结果页、`NEED_CONFIRMATION` 可达性、规则不匹配失败态用例）在 `5bcb1cc` 上**均未变化**；`landingSpec` 中 `rule-confirmation` 仍为两类状态共用键。 | `public/app.js` `landingSpec` 的 `rule-confirmation` 条目；`tests/e2e` 9 用例无 `rule-confirmation` 路径 |
 
 ## 5. 明确标注项
 
@@ -491,12 +574,12 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 
 | A 项 | 现状（代码事实） | 修正后应满足 | 归属测试 |
 |---|---|---|---|
-| A04 授权拦截 | 未授权时 `auth-needed`；`assertAuthorized()` 拒绝方案/候选/比较/陪伴命令；**取消授权**命令已存在但页面无入口 | 页面上可见「撤销授权」并验证下游 `downstreamReset()` | `tests/integration` |
+| A04 授权拦截 | 未授权时 `auth-needed`；`assertAuthorized()` 拒绝方案/候选/比较/陪伴命令；**取消授权**命令已存在但页面无入口（**波次 5 复核**：`public/app.js` 与 `public/actions/*.js` 均无 `revoke` / `撤销授权` 字样，仍是波次 5 待办） | 页面上可见「撤销授权」并验证下游 `downstreamReset()` | `tests/integration` |
 | A09 问答边界 | `research_qa` 无片段 → `422`（已有 E2E）；`assistant_qa` 结构化事实不足才 `422` | `pc/events`/`macro`/`industry` 与 `m/assistant` 分别验证 | `tests/e2e` |
-| A10 分支闭环 | 保险、私行、持仓收益仍为静态 | P-05、P-13、P-15 收工后闭环 | `tests/e2e` |
-| A13 真实表达 | 存在硬编码 KPI 与「99.98%」「94.6%」 | 由 P-01 清除 | `tests/e2e` |
+| A10 分支闭环 | 保险、私行、持仓收益仍为静态（**波次 4 更新**：保险动作与持仓收益已改接服务端，#20/#17；私行 P-05 仍整页受限、未消费 `qualified_status` 派生投影） | P-05、P-13、P-15 收工后闭环 | `tests/e2e` |
+| A13 真实表达 | ~~存在硬编码 KPI 与「99.98%」「94.6%」~~（**波次 5 复核**：`pageArchitecture()` 已改为只读 `GET /api/health` 的 `dependencies.*` 与 `api_version`/`frontend_contract_version`，无来源的调用量/评测通过率不展示；#21 进一步清除了 P-02 / P-03 / P-06 / P-08 / P-14 / P-16 的产品与计数硬编码。`99.98` / `94.6` 在 `public/app.js` 已无命中；**仍需**一条「页面无默认 KPI」的 E2E 断言，且 `/ready` 的 7 项 checks 前端仍未消费） | 由 P-01 清除 | `tests/e2e` |
 | A18 请求一致性 | `runRealAiTask()` 用 `activeAiRequestToken` 丢弃旧响应；**PR#9** 在规则执行前复核会话版本 | 现有机制需一条显式用例 | `tests/e2e` |
-| A20 知识引用可回指 | 页面仅显示 `chunk_id`，**未显示标题与页码** | 引用展示 `title` + `page`（`/api/knowledge` 自 PR#6 起文档条目显式带 `title`，`chunk_id` 可回指） | `tests/e2e` |
+| A20 知识引用可回指 | ~~页面仅显示 `chunk_id`，**未显示标题与页码**~~（**波次 5 复核**：`pageReader()` 已展示片段 `title`、第 N 页与 `source_id`，`pageLibrary()` 展示每产品片段的 `document_id`；**仍缺**：研究问答、摘要、写作三类结果的引用卡片的标题/页码回指） | 引用展示 `title` + `page`（`/api/knowledge` 自 PR#6 起文档条目显式带 `title`，`chunk_id` 可回指） | `tests/e2e` |
 | A34 服务开放 | `/api/demo-data` **不带 `session_id` 时在 `DATA_MODE=database` 直接 400** | 外部调用者需先建会话再传 `session_id`；验收用例必须体现该前置 | `tests/unit`（不含 DB 的接口契约用例） |
 | A35 真实时延 | `ai_requests` 记录 `latency_ms`、`model`（已存在）；页面展示时延 | 保持 | `tests/integration` |
 
@@ -588,6 +671,14 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 4. **明确红线**：**未获批准前 Worker 不得先行改动冻结集合**——不得先加状态 key / PATCH 字段 / 命令，再补 `tests/unit/session-contract.test.js` 断言；集合断言失败即按 §8.2 第 2 款视为未获批准。
 5. **波次 4 新引入的前置（不计入本节的 8 项）**：真库 `NUMERIC` 字符串归一化属 `backend` owner 的实现缺陷修复，**不涉及**契约集合与口径变更，但它是 P-04 / P-15 / P-17 三页成功态的前置；在归一化落地前不得把这三页记为达标。
 
+#### 波次 4 / 5 决策记录补充（2026-11-06，基线 `5bcb1cc`）
+
+> 本节只登记「波次 3 / 4 / 5 全程是否改动冻结集合」与「仍未落地的待批准项」，**不新开规格**，也不改 36 / 19 / 7 / 11 任何集合。
+
+- **冻结集合全程未变**：波次 3、波次 4（#18 / #19 / #20 / #21）与波次 5 并行工作包均未改动会话状态契约——`defaultSessionState()` 36 key、`SESSION_PATCH_FIELDS` 19 项、`SESSION_COMMANDS` 7 项、`downstreamReset()` 11 key 一律原样，`tests/unit/session-contract.test.js` 的冻结断言未被改写（#18 的归一化只改 `src/platform/` 与两个 service 的入口类型处理，不写状态；#20 / #21 为前端；#19 与本 PR 为纯文档）。
+- **仍未批准的待批准项**：`contactTodo` 从 `PATCH` 迁出（§8.1 第 3 项）、写作草稿持久化（§8.1 第 7 项），以及**任何新增状态 key**（含若后续要把认定结果或保单落成会话字段），仍属「需状态契约 owner 批准」的待批准项，**W1 全程不落地、不先行实现**；批准前页面只能消费只读投影与派生投影。
+- **P-05 / P-13 的派生投影仍只读**：`qualified_status`（恒 `UNKNOWN` / `no_qualified_source`）与 `insurance_coverage`（`policy_id` 恒 `null`、`coverage_gap.available=false`）不构成写入通道，页面改接它们**不属于** §8.1 的批准范围。
+
 ## 9. 领取与验收流程
 
 1. Worker 按表领取条目，先写「逐页填写模板」（§2）再改代码；
@@ -605,13 +696,75 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **契约变更只在 §8 登记**：新增/调整状态一律进 §8.1，并遵守 §8.2 的「先批准后实现、一次性同步」；未获 `contract` owner 批准不得改动冻结集合；
 - **波次 3 起追加登记点**：流程口径未变，仍以 §8.1 为契约变更唯一入口；波次 3 只新增了 §0.5（收工登记）、§1.1（缺口基数重算）、§8「波次 3 决策记录」的波次 4 补充与 §12（波次 4/5 排期参考），以及各条目行/条目的「已推进 · 波次 3」标注，**未新增任何指标、未新增运行页面、未登记 C/D/E 类指标的判定结论**。
 
-## 11. 波次 4 进度登记位（供后续 docs 波次回填）
+## 11. 波次 4 / 5 进度登记位（供后续 docs 波次回填）
 
-> 每合并一批 PR，在本节追加一行，并在 §0.5 后另起「§0.6 波次 4 收工登记」；缺口数只改 §1.1。
+> 每合并一批 PR，在本节追加一行，并在 §0.5 后另起「§0.6 波次 4 收工登记」；缺口数只改 §1.1（波次 4 后以 §1.2 为准）。
 
-| 波次 4 PR | 性质 | 落到本清单的哪一节 | 状态 |
+| PR | 类型（owner） | 性质 | 落到本清单的哪一节 | 状态 |
+|---|---|---|---|---|
+| #18 | backend（`backend`） | 真库 `NUMERIC` 归一化（只读计算入口） | §0.6、§1 行 6/23/26/29、§1.2、§3 P-04/P-15/P-17、§8 波次 4/5 补充 | 已合并 `39147e4` |
+| #19 | docs（`docs`） | 波次 3 进度登记与波次 4/5 排期 | §0.5、§1.1、§8 波次 4 补充、§11、§12 | 已合并 `4c2bcda` |
+| #21 | frontend-lead（`frontend-lead`） | P-02/P-03/P-06/P-08/P-14/P-16 改接 `/api/demo-data` 与 `/api/knowledge` | §0.6、§1 行 3/4/5/10/15/22/27、§1.2、§3 P-02/P-03/P-06/P-08/P-14/P-16 | 已合并 `6fcdb0e` |
+| #20 | frontend-diagnosis（`frontend-diagnosis`） | 保险动作改接真实产品事实（P-13），`m-diagnose` 停止静默改诊（P-12） | §0.6、§1 行 20/21、§1.2、§3 P-12/P-13 | 已合并 `5bcb1cc` |
+| 本 PR（波次 5 · docs） | docs（`docs`） | 波次 5 收档自检：基线更新为 `5bcb1cc`、波次 4 收工登记（§0.6，位于 §0.5 之后、§0.1 之前）、缺口基数重算（§1.2）、P/H 条目「已推进 · 波次 4」标注、§7 逐条修正复核、§8 决策记录补充、§11.1 A01–A35 自检、§13 波次 5 之后的剩余工作 | §0.6、§1 表行、§1.2、§3、§4、§7、§8、§11、§11.1、§12、§13 | 见本 PR |
+
+> **勘误（保留原文追溯）**：上表在 `4c2bcda` 时曾把行 `#18` 记为「docs（本 PR）：波次 3 进度登记与缺口基数重算」——该行实际对应的 PR 是 **#19**（`4c2bcda`，docs）；而真正合并的 **#18 `39147e4` 是 backend（真库 `NUMERIC` 归一化）**。本 PR 按 `gh pr view` 与 `git log` 更正，原文保留于此以免后续 Worker 误判。
+
+### 11.1 A01–A35 自检登记（波次 5 收档，基线 `5bcb1cc`）
+
+> **自检口径**：以架构文档 V2.3 第 11 章 A01–A35 逐条比对 `5bcb1cc` 代码事实与已合并 PR。只分三类：**已完成**（W1 fixture / 单节点或已合并证据足以支撑本章通过条件）、**W1 fixture 下部分完成**（链路或结构已真、但缺用例、缺数据源、或仅单实例/单路径验证）、**明确后置**（E 类性能与统一评测集、C/D 类交付物、真实模型调用、双节点与多集群）。**任何一条都不以 H 列自评或 fixture 结果作为「生产验收通过」证据。**
+>
+> 关于 A14 的唯一允许表述：**八类任务均产生可验证的 fixture 调用与真实证据链，模型名恒为 `fixture-generate-1`，真实模型调用后置。**
+
+| A 项 | 验收场景 | 分类 | 一句话代码事实 / PR 证据 |
 |---|---|---|---|
-| #18 | docs（本 PR）：波次 3 进度登记与缺口基数重算 | §0.5、§1 表行、§1.1、§3 P-04/P-15/P-17、§8 波次 4 补充、§12 | 见 PR |
+| A01 | 双节点启动与界面边界 | 部分完成 | 0.2 白名单 30 路由可达，`tests/e2e` 的 `contract`/`mobile-flow`/`pc-flow`/`work-items` 覆盖菜单与路由边界（15 次运行）；**「A、B 两个实例 + 负载均衡」本轮未在 W1 验证**（单实例开发态），双节点归后置。 |
+| A02 | 数据与知识真实性 | 部分完成 | `GET /api/demo-data` 发布 `products[]` / `holdings[]` / `knowledge` 投影，字段带 `source_id` / `source_timestamp`（#14 / #21 页面消费）；知识条目带 `page`（`tests/unit/fixture-parity.test.js`、`fixture-parity` 断言 JS fixture 与 SQL seed 一致）；**行内客户/持仓与当天产品仍为演示 fixture**，非行内真实数据。 |
+| A03 | 主流程 | 部分完成 | 手机主闭环 E2E 通过（`tests/e2e/mobile-flow.spec.js`「助手 → 配置 → 候选 → 比较 → 投后陪伴」），`ensureAuthorization()` 真实点击生成方案；PC 闭环见 `pc-flow.spec.js`；**要求的是「助手 → 持仓 → 诊断 → 配置 → 候选 → 比较 → 陪伴」连续串行**，现有用例把持仓/诊断段拆开或跳过，故仅部分完成。 |
+| A04 | 授权拦截 | 部分完成 | `m/allocation` 未勾选 → `auth-needed`；`tests/unit/sessions.test.js`「generic session patch cannot forge authorization…」与「comparison requires two real products and revocation clears downstream state」（`mobile-flow.spec.js:34` 撤销授权清方案/候选/比较）已验证下游清理；**页面无「撤销授权」入口**（§7 A04），`downstreamReset()` 11 key 未按页面路径逐一验证。 |
+| A05 | 配置一致性 | 已完成 | `generate_allocation` 100% 合计（`tests/unit/rules.test.js`）；目标变更使旧候选/比较失效（`tests/unit/sessions.test.js:56`「goal changes invalidate plans, candidates and comparisons」）。 |
+| A06 | 候选逻辑 | 部分完成 | 候选资格/理由/排序由 `candidateCalculation` 给出（#9），`reasons[].constraints` 与 `holding_months` 已由 #21 在 `m/candidates` 消费；`tests/unit/rules.test.js:22` 断言风险/期限/流动性/可售四类约束；**`pc/candidates` 仍未消费 `score`/`candidateCalculation`**（§4 H-02 波次 5 复核）。 |
+| A07 | 比较逻辑 | 部分完成 | `save_comparison` 要求 2–3 个真实产品（`tests/unit/sessions.test.js:43`），`m-compare-add` 经 `/api/demo-data` 校验 `product_id`（#12）；服务端产出 `comparable` / `incomparable_reason`；**前端仍未消费该口径**（H-03）。 |
+| A08 | 计算一致性 | 部分完成 | 存款本息 `POST`…即 `GET /api/calculations/deposit` 可由 `principal × rate × years` 复算（`tests/unit/deposit-calculation.test.js`）；持仓合计/占比/集中度由 `GET /api/calculations/portfolio` 复算（`tests/unit/portfolio-calculation.test.js`），真库字符串入口已归一（#18）；**提前支取结果未实现**（`m-deposit-compare` 无服务端入口），页面三态用例缺。 |
+| A09 | 问答边界 | 已完成 | `research_qa` 无片段 → `422 INSUFFICIENT_EVIDENCE`（`tests/e2e/contract.spec.js:48` + `tests/integration`）；前端不吞错（`ai-error` 卡片）。 |
+| A10 | 分支闭环 | 部分完成 | 保险动作已按被点击产品渲染真实事实（#20），持仓收益接只读端点（#17），理财/存款有入口；**私行 P-05 仍整页受限、未消费 `qualified_status`**；报告阅读与智能写作能到达结果页但正文/草稿无真实持久化；选品/模型运营/来源接入/交付验收不设运行页面（§5.2）。 |
+| A11 | 动作状态 | 部分完成 | `record_activity` 服务端生成 `activity_id`，同 `request_id` 幂等（`tests/unit/activities.test.js`）；比较/陪伴提交用 `showActionError` 显示真实错误；**写作草稿不持久**（§8.1 第 7 项待批准）；部分 `landingSpec` 条目仍为说明性文本。 |
+| A12 | 会话恢复 | 已完成 | `tests/e2e/contract.spec.js:21`「创建 session，刷新后恢复同一 session_id 与服务端状态」；`tests/integration/db-smoke.test.js:84`（opt-in）证明会话落 PostgreSQL。 |
+| A13 | 真实表达 | 已完成（页面侧） | `pageArchitecture()` 只读 `/api/health`、无来源指标不展示；`99.98` / `94.6` 已无命中；#21 清除了 P-02/P-03/P-06/P-08/P-14/P-16 的产品与计数硬编码；页面保留「演示桩 fixture」标注；无「真实交易成功 / 渠道联调成功」提示。 |
+| A14 | 真实模型调用 | 部分完成（真实模型后置） | **八类任务均产生可验证的 fixture 调用与真实证据链**（`tests/unit/fixture-model-client.test.js`、`ai.test.js` 覆盖八类 `task_type` 的引用白名单与证据包，模型名恒为 `fixture-generate-1`，`latency_ms` 落库）；**真实模型调用后置**，本清单不宣称 A14 已满足。 |
+| A15 | 密钥安全 | 已完成 | `scripts/ci/check-secrets.mjs` + `tests/unit/security-check.test.js`（`.env`、`qwen.key`、私钥与模型 API key 模式全部拒绝）；`/api/health` 不返回连接串。 |
+| A16 | AI 异常处理 | 已完成 | `tests/unit/ai.test.js`「AI response is rejected when the session advances during generation」；`tests/e2e` 证据不足与 `ai-error` 路径；模型不可用返回 `DEPENDENCY_UNAVAILABLE` 而非预置答案（`tests/http/app.test.js:36`）。 |
+| A17 | 事实与引用 | 已完成 | `tests/unit/ai.test.js`「AI rejects fabricated prefixed citations」「research generation returns only evidence-backed citations」；模型无法改写数值（`rule matching executes the stored action and ignores model supplied action values`）。 |
+| A18 | 请求一致性 | 部分完成 | `runRealAiTask()` 用 `activeAiRequestToken` 丢弃旧响应、`request_id` 不匹配即抛错（`public/app.js:1304–1346`）；`tests/unit/ai.test.js:69` 覆盖会话推进后拒绝；**超范围转人工状态机的专用用例仍缺**（H-04）。 |
+| A19 | 真实数据参与生成 | 已完成 | 诊断/候选/解释证据包携带 `data_id` / `calculation_id`，`finalizeEvidence()` 嵌入 `portfolio_calculation`（PR#9）；`tests/unit/ai.test.js` 断言引用与证据一致。 |
+| A20 | 知识参与生成 | 部分完成 | 研究/摘要/写作均带 `chunk_id`（`tests/unit/fixture-model-client.test.js`）；`pageReader()` 已展示片段 `title` + 页码 + `source_id`；**研究问答/摘要/写作结果卡片的标题与页码回指仍缺**（§7 A20）。 |
+| A21 | 真实向量检索 | 部分完成（后置真实 Embedding） | `tests/unit/fixture-vector.test.js`（1536 维确定性向量、Top-1 回归）与 `tests/integration/db-smoke.test.js:57`（pgvector 每条片段有向量，opt-in）；**真实 Embedding API 后置**，W1 为 `fixture-deterministic-1536`。 |
+| A22 | 索引一致与隔离 | 已完成 | 迁移创建 `vector(1536)` + hnsw 索引（`db-smoke.test.js:29`）；模型/知识版本不一致即阻止调用并由 `fixture-parity.test.js` 断言两端一致；客户持仓与回答不写入向量库。 |
+| A23 | AI 规则匹配 | 已完成 | `tests/unit/ai.test.js:23`「rule matching executes the stored action and ignores model supplied action values」；`rule_id` + `rule_version` 精确匹配（#9）。 |
+| A24 | 规则确认与越界 | 部分完成 | 服务端非 `MATCHED` 返回 `patch: {}` 不覆盖旧方案（#9）；`openLanding('rule-confirmation')` 显示 `ruleMatch.status` 与 `missing_fields`；**`UNSUPPORTED_RULE` 仍与 `NEED_CONFIRMATION` 共用同一结果页，`NEED_CONFIRMATION` 在表单恒有默认值 + fixture 置信度 0.99 下不可达**（H-06）。 |
+| A25 | 当天快速导入 | 明确后置（C 类） | `scripts/import/validate.js` / `run.js` 与 `tests/unit/import.test.js` 提供导入校验；**「当天」在行内真实数据上完成校验、入库、加工、激活需行内环境**，不由 W1 判定。 |
+| A26 | 产品最新与实时 | 明确后置（C/E 类） | W1 只有单版本 `ACTIVE` 数据/知识版本（`db-smoke.test.js:45`）；**当天基线/增量双节点可见、来源超期提示、属性变更使旧候选失效**需行内数据源与双节点，后置。 |
+| A27 | 双节点会话一致 | 明确后置 | 单节点验证；A/B 交替请求的会话一致性需双节点环境。 |
+| A28 | 知识双节点一致 | 明确后置 | 同上；W1 只证明单库 `ACTIVE` 知识版本可召回（`db-smoke.test.js:57`）。 |
+| A29 | 节点故障续接 | 明确后置 | `GET /api/health/checks`（#14）暴露 7 项 checks 可作就绪判据，但停止节点后续接的原会话**未在 W1 验证**。 |
+| A30 | 就绪与版本控制 | 已完成 | `GET /ready` 的 7 项 boolean checks（`tests/http/readonly-contract.test.js:90`）；未就绪节点 503 `NODE_NOT_READY`（`src/app.js`）；半成品版本不激活（`db-smoke.test.js:45`）；`/api/health` 携带 `api_version` / `frontend_contract_version` 且与 `public/index.html` 一致（`readonly-contract.test.js:81`）。 |
+| A31 | 界面边界与可替换性 | 已完成（结构） | 前端只经 `session-sync.js` 适配层访问 API，播放层替换不改后端；30 路由冻结；`tests/unit/frontend-menu.test.js` 断言 12 个退出路由字符串不出现在前端源码。 |
+| A32 | 总体需求规格覆盖 | 已完成（台账） | 架构文档附录 A 逐条登记 R2–R62（61 条）的承载与判定归属；本清单不登记满足情况、不引用 H 列。 |
+| A33 | 界面边界一致性 | 已完成 | 运行路由/菜单/动作与 `public/` 一致（`tests/unit/frontend-menu.test.js`、`tests/e2e/work-items.spec.js` 的未知操作 `not-implemented`）；`public/requirements.js` 中 F22–F33 显示「无独立运行页面」。 |
+| A34 | 服务开放与非封闭 | 部分完成 | 不经浏览器可完成同一链路：`GET /api/demo-data`（database 模式必须带 `session_id`，否则 400）、`GET /api/knowledge`、会话命令、`POST /api/ai/generate`（`tests/http/app.test.js`、`tests/integration/w1-flow.test.js`）；**「统一 JSON 与错误码 + 先建会话再传 session_id」的专门接口契约用例仍缺**（§7 A34）。 |
+| A35 | 真实时延与日志 | 部分完成 | `ai_requests` 记录 `model` / `latency_ms` / `request_id`（`tests/unit/ai.test.js`、`tests/integration/db-smoke.test.js` 查询）；运行日志含时间、路径、状态、耗时与追踪标识；**逐条 70QPS / 24 小时 / 统一评测集不作结论**（E 类）。 |
+
+**A01–A35 自检合计（逐行标注统计）**
+
+| 分类 | 条数 | A 项 |
+|---|---|---|
+| 已完成 | **13** | A05、A09、A12、A13、A15、A16、A17、A19、A22、A23、A30、A31、A32、A33 |
+| W1 fixture 下部分完成 | **17** | A01、A02、A03、A04、A06、A07、A08、A10、A11、A14、A18、A20、A21、A24、A34、A35 |
+| 明确后置 | **5** | A25、A26、A27、A28、A29（A14 的「真实模型调用」与 A21 的「真实 Embedding API」两个子项虽后置，但整条只计一次并归入「部分完成」；A23 的规则排名复核子项不单独计条） |
+
+> 核对：已完成 **13** + 部分完成 **17** + 明确后置 **5** = **35**，与第 11 章 A01–A35 条目数一致。上表逐行「分类」单元格是唯一依据；本行只作合计核对。
+
+> **红线复核**：上表未把 E 类（70 QPS、24 小时、多集群、四类任务各 5 次、统一评测集）、C 类（导入、知识加工、部署、文档）、D 类（承诺书、行内集成、信创、专利与授权）或真实模型/真实 Embedding 调用写成「已完成」或「已由 W1 fixture 判定」；A14 只写「八类任务均有可验证的 fixture 调用与真实证据链、模型名恒为 `fixture-generate-1`、真实模型后置」。
 
 ## 12. 波次 4 / 5 排期（供 orchestrator 参考）
 
@@ -631,3 +784,48 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 2. **§7 逐条修正项**：A04 撤销授权入口、A20 引用页码、A34 服务开放前置、A18 请求一致性用例。
 3. **E2E 从 15 项扩到覆盖 30 页**：当前 9 用例 × 2 工程 = 15 次运行；波次 5 需按 §1 路由逐页补成功/失败/空三态，使 ② 口径有可执行证据，而非仅靠人工核验。
 4. **A01–A35 自检**：以架构文档第 11 章逐条比对，登记未达成项；**不得**在自检中把 E 类（性能/评测集）或 C/D 类指标写成「已由 W1 fixture 判定」（§6 红线 3）。
+
+> 波次 5 执行状态（基线 `5bcb1cc`，据已合并 PR 登记）：第 1 项 H 类收尾**未全部落地**（H-03 固定文案已不在代码中、前端仍未消费 `comparable`；H-02 / H-04 / H-05 / H-06 未变化，见 §4「波次 5 代码事实复核」）；第 2 项 A04 / A18 / A20 / A34 **未落地**（A20 仅阅读器页面已有页码，见 §7）；第 3 项 E2E 仍为 15 次运行、**未扩页**；第 4 项 A01–A35 自检已在本 PR 登记于 §11.1（纯文档，不改任何代码）。波次 5 的并行工作包（frontend-lead 的 H 类收尾、test-e2e 的三态扩展、test-unit 的接口契约用例）若已提交，其结论以对应 PR 描述为准，**本清单不代其判定达标**。
+
+## 13. 波次 5 之后的剩余工作（供 orchestrator 决定是否需要后续波次）
+
+> 本节只列「仍未达标 / 仍缺数据源或契约 / 仍无助跑证据」的事实清单，不改 §1.2 的任何缺口数，也不构成验收结论。条目编号沿用 §1 与 §3 / §4。
+
+### 13.1 仍未达标的 P 类条目（17 条，按缺什么分组）
+
+| 分组 | 条目（路由） | 剩余事实（代码/PR 可核） |
+|---|---|---|
+| A. 页面已改接服务端读数，缺真库成功态与三态用例 | P-02 `pc/product-fund`、P-04 `pc/product-deposit` / `m/deposit`、P-08 `pc/library`、P-15 `m/holdings`、P-17 `m/companion`、P-14 `m/wealth` | 读数已接 `GET /api/demo-data` / `GET /api/calculations/*`（#17 / #21），真库字符串入口已归一（#18）；`tests/e2e` 无任何失败态与空态断言；P-04 的本金/期限仍为固定输入。 |
+| B. 缺数据源 | P-03 `pc/product-insurance` + `pc/product-wealth`、P-06 `pc/supply`、P-13 `m/insurance` | 保单表（§8.1 第 6 项）、管理人字段、资讯/策略供给均无服务端来源；P-13 的「两张保单内容不同」无法真实达成；`m-policy` 无页面入口。 |
+| C. 缺计算入口或持久化 | P-10 `pc/writing`、P-11 `pc/result` + `m/result` | 写作草稿持久化（§8.1 第 7 项，需 owner 批准）；`landingSpec` 中 `workspace` / `subscribe` / `templates` / `extract` / `review-writing` / `filter-panel` / `task-center` 仍为说明性文本而非服务端事实。 |
+| D. 契约与页面均未动 | P-05 `pc/product-private`、`m/private` | `qualified_status` 只读派生投影已由 #14 暴露，但两页仍整页受限、未消费；`contactTodo` 写入面迁移待 owner 批准（§8.1 第 3 项）。 |
+| E. 仍未改接或只部分接线 | P-01 `pc/architecture`、P-07 `pc/events` / `pc/macro` / `pc/industry`、P-09 `pc/reader`、P-12 `m/fund` | P-01 已接 `/api/health` 但未消费 `/ready` 的 7 项 checks；P-07 三页共用 `researchPage()`，仅显示「暂无可引用材料」空态；`pc/reader` 已显示片段页码但正文仍无来源；`m/fund` 列表仍为前端 4 条硬编码，`422` 专用文案未实现（#20 已注明属 `frontend-lead`）。 |
+
+### 13.2 仍未达标的 H 类条目（6 组）
+
+- **H-01** `pc/workspace`：`pageWorkspace()` 在无 `researchAnswer` 时已显示「当前无最近使用记录」空态，消息提醒改取 `activities[]`（无写入时「当前无消息提醒」）；**仍缺**：`research-plan` 结果页的「拆解步骤」没有服务端来源（`landingSpec` 只显示活动记录与「以服务端返回为准」的说明，无步骤数据、也无 E2E）。原「『已拆解 3 步』显示」表述**按代码事实撤回**（`public/app.js:907` 已改为不展示预置步数）。
+- **H-02** `pc/candidates`：无候选仍为表体缺省行；「适配度」列仍渲染恒为 `—` 的 `p.match`；排序未消费 `candidateCalculation`；`score` 字段未产出。
+- **H-03** `pc/compare` / `m/compare`：固定结论文案已不在代码中，但 `comparable` / `incomparable_reason` **仍未被前端消费**，口径切换仍只改行标签。
+- **H-04** `pc/research`：重复提问无「已存在结果」提示；超范围问题无专门拒答文案。
+- **H-05** `m/assistant`：多轮上下文仍只有 `lastAnswer` 单槽；澄清场景无入口。
+- **H-06** `m/allocation`：`UNSUPPORTED_RULE` 与 `NEED_CONFIRMATION` 仍共用 `rule-confirmation` 结果页；`NEED_CONFIRMATION` 在表单恒有默认值时不可达；规则不匹配失败态无 E2E。
+
+### 13.3 需要契约或其他 owner 批准 / 变更的项
+
+1. `contactTodo` 从 `PATCH` 迁出（§8.1 第 3 项，19 → 18 + 命令/activity kind）。
+2. 写作草稿持久化（§8.1 第 7 项，36 → 37 或 7 → 8 命令）。
+3. 保单与保障缺口数据来源（§8.1 第 6 项，需 `data` 新表 + seed、`contract` 定路由）。
+4. 产品快照补字段：净值序列（区间收益/回撤多区间）、规模、持仓与行业分布、基金经理、费率结构、管理人字段——P-02 / P-03 的成功态依赖这些字段（新增只读投影字段，不新增状态 key）。
+5. `diagnosis_explain` 证据包路径在真库下的 `NUMERIC` 归一（#18 描述自述为后续项，涉及 `ai-orchestration` owner）。
+6. 候选排序的独立可复算 `score`（服务端 `candidateCalculation` 产出，前端消费）——涉及 `backend` 与 `frontend-lead`。
+7. `/ready` 的 7 项 checks 前端消费（P-01 的「服务未就绪」失败态），需确认是 `contract` 还是 `frontend-lead` 范围。
+
+### 13.4 E2E 覆盖仍缺的页面（基线 `5bcb1cc`，15 次运行）
+
+现有 9 个用例只覆盖：页面契约标记与 `/ready`、会话创建与刷新恢复、409 版本冲突、证据不足 422、工作项写入与刷新恢复、未知操作 `not-implemented`、PC 闭环、手机闭环、撤销授权清理。**下列路由没有任何三态用例**：`pc/architecture`、`pc/supply`、`pc/product-fund`、`pc/product-insurance`、`pc/product-wealth`、`pc/product-deposit`、`pc/product-private`、`pc/candidates`、`pc/compare`、`pc/events`、`pc/macro`、`pc/industry`、`pc/library`、`pc/reader`、`pc/writing`、`pc/result`、`m/assistant`（多轮追问）、`m/fund`、`m/insurance`、`m/wealth`、`m/deposit`、`m/private`、`m/allocation`（规则不匹配失败态）、`m/holdings`、`m/candidates`、`m/compare`、`m/companion`、`m/result`。其余路由只在闭环用例的正常路径里被经过（`pc/workspace`、`pc/research`、`m/allocation` 匹配成功路径），**没有任何失败态或空态断言**。
+
+### 13.5 是否继续后续波次的判断依据（事实，不给结论）
+
+- 若目标是「主链路闭环」（口径 ①）：`9411ead` 上 30 / 30 与 E2E 15 / 15 已绿；`5bcb1cc` 的合并后门禁结论**待编排器确认**，未见新增失败证据。
+- 若目标是「30 页逐页达标」（口径 ②）：仍为 `0 / 30` 页，需按 §13.1–§13.4 补齐三态用例与数据源；**#18 只消除了 A 组的服务端阻塞，未产生任何达标页**。
+- E 类（70 QPS、24 小时、多集群、四类任务各 5 次、统一评测集）、C/D 类（承诺书、行内集成、信创、专利）与真实模型 / 真实 Embedding 调用，**无论是否继续波次都不由 W1 判定**（§5.3、§11.1）。
