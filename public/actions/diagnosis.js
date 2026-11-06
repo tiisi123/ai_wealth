@@ -1,5 +1,45 @@
 // W1 action domain: diagnosis. Only this file may be edited by its owner.
 // Branches are kept verbatim; dispatch preserves their original order.
+
+// P-13 / P-12 support. These helpers only READ service data and FORMAT it for
+// display; they never invent a number. GET /api/demo-data (through the shared
+// session adapter) is the single source: the server sends coverage /
+// annual_premium as either numbers or pg NUMERIC strings ("4000000").
+const INSURANCE_TYPE = '保险';
+// pg NUMERIC strings are shown as text, never coerced through Number(): that
+// would drop precision or silently turn "12.5" into money rounded in the browser.
+const factValueText = (value) => {
+  if (value == null) return '';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '';
+  return String(value).trim();
+};
+const factMoneyText = (value) => {
+  const raw = factValueText(value);
+  if (!raw) return null;
+  return /^-?\d+(\.\d+)?$/.test(raw) ? `¥${raw}` : raw;
+};
+const saleStatusText = (status) => {
+  const raw = factValueText(status);
+  if (!raw) return null;
+  const labels = {ON_SALE: '在售', OFF_SALE: '停售', SUSPENDED: '暂停销售', SOLD_OUT: '额度售罄'};
+  return labels[raw] ? `${labels[raw]} · ${raw}` : raw;
+};
+// The clicked element's data-product is the only acceptable target. Falling back
+// to any other product would show facts for something the user did not click.
+const insuranceTargetOf = (el, productId) => {
+  const id = factValueText(productId || el?.dataset?.product);
+  if (!id) return {reason: 'missing_product_id'};
+  const product = productOf(id);
+  if (!product) return {id, reason: 'unknown_product'};
+  if (product.type !== INSURANCE_TYPE) return {id, product, reason: 'not_insurance'};
+  return {id, product};
+};
+// A diagnosis failure is NOT rendered here. runRealAiTask (app.js,
+// frontend-lead) catches every failure itself and shows the generic 'ai-error'
+// landing, so an action-layer error renderer could never run; none is left as
+// dead code. The failure states this branch does own — the click carries no
+// product id, or a non-insurance/missing id — are rendered explicitly instead.
+
 window.WealthActions.registerDomain(["add-compare","m-coverage","m-deposit-compare","m-diagnose","m-holding","m-policy","m-product-detail","m-review","m-review-detail","m-wealth-detail","new-screen","product-deposit","product-fund","product-insurance","product-wealth","save-diagnosis","switch-role"], function actionsDiagnosis(action, el, productId, e){
   if(action==='switch-role'){
     const next=session().role==='产品专家'?'投顾 / 财富管理':'产品专家';
@@ -31,15 +71,28 @@ window.WealthActions.registerDomain(["add-compare","m-coverage","m-deposit-compa
     return;
   }
   if(action==='m-diagnose'){
-    const id=productId||'fund';
-    const p=productOf(id)||{};
-    void runRealAiTask('diagnosis_explain',{question:`请基于${p.name||id}的真实产品事实和授权持仓给出诊断解释。`},(result)=>{
+    // P-12: the diagnostic runs for the product the user actually clicked. It is
+    // never silently redirected to another product: no id or an id the service
+    // snapshot does not know stays an explicit empty state.
+    const id=factValueText(productId||el?.dataset?.product);
+    const p=id?productOf(id):null;
+    if(!id||!p){
+      genericModal('基金深度诊断',`<div class="callout warn"><b>无法生成诊断</b><p>${id?`服务端产品快照中没有 ${esc(id)}，可能未授权或已下架。`:'本次点击没有携带产品标识。'}</p></div><p class="muted">本页不会改用其它产品代替诊断。</p>`,btn('知道了','close-dialog','primary'));
+      return;
+    }
+    const run=runRealAiTask('diagnosis_explain',{question:`请基于${p.name||id}的真实产品事实和授权持仓给出诊断解释。`},(result)=>{
       const diagnosis={name:p.name||id,asOf:session().asOf||'2026-09-28',drawdown:p.drawdown||'—',rank:'以本次证据为准',exposure:'以本次证据为准',text:result.text,sources:result.citations||[],evidence:result.evidence,executionMode:result.execution_mode||'real',model:result.model,latency_ms:result.latency_ms};
       window.__pendingDiagnosis=diagnosis;
       patch({diagnosis,aiRequests:[...(session().aiRequests||[]),result.request_id]});
       genericModal('基金深度诊断',`<div class="insight-header"><h2>${esc(diagnosis.name)}</h2><p class="muted">${diagnosis.executionMode==="fixture"?"演示桩 fixture 诊断":"AI 生成诊断"} · 数据截至 ${esc(diagnosis.asOf)}</p></div><p>${esc(diagnosis.text)}</p><div class="callout warn">风险提示：产品事实和风险字段来自本次证据包，解释不构成投资建议。</div><p class="muted">引用：${esc(diagnosis.sources.join('、')||'暂无')}。模型：${esc(diagnosis.model||'未知')} · ${esc(String(diagnosis.latency_ms||0))} ms。</p>`,btn('保存诊断','save-diagnosis','primary'));
       return false;
     },'m-diagnose',{product_ids:[id]});
+    // runRealAiTask catches its own failures (see the note above the helpers), so
+    // this handler never fires today. It only keeps a future rejection from
+    // becoming an unhandled promise rejection; it shows no success state.
+    if(run?.catch) run.catch(()=>{
+      openLanding('action-error');
+    });
     return;
   }
   if(action==='save-diagnosis'){
@@ -56,7 +109,41 @@ window.WealthActions.registerDomain(["add-compare","m-coverage","m-deposit-compa
     return;
   }
   if(action==='m-coverage'||action==='m-policy'){
-    genericModal('保障详情',`<h2>安享长期医疗</h2><p class="muted">保障额度 ¥4,000,000 · 等待期 30 天 · 年度保费 ¥3,280</p><div class="callout warn">请重点确认：既往症除外责任、续保条件和免赔额。系统不替代健康告知、核保和理赔审核。</div>`,btn('返回保障检视','close-dialog','primary'));
+    // P-13: the dialog describes the insurance product the user clicked. It reads
+    // the product facts that GET /api/demo-data already handed to the shared
+    // session and prints only the fields the service actually returned. The old
+    // fixed 「安享长期医疗 ¥4,000,000」 dialog is gone: no target id, unknown id
+    // or a non-insurance product all render the explicit empty state, never a
+    // default policy and never an invented amount.
+    const footer=btn('返回保障检视','close-dialog','primary');
+    if(!sessionApi()?.product){
+      genericModal('保障详情',`<div class="callout warn"><b>未授权或暂无可展示保单</b><p>共享应用服务未连接，无法读取 GET /api/demo-data 的保险产品事实。</p></div>`,footer);
+      return;
+    }
+    const target=insuranceTargetOf(el,productId);
+    if(target.reason){
+      const detail={
+        missing_product_id:'本次点击没有携带保险产品标识。',
+        unknown_product:'未在当前服务端产品快照中找到该产品，可能未授权或已下架。',
+        not_insurance:'所点击的对象不是保险产品，本页不展示任何保障事实。'
+      }[target.reason];
+      genericModal('保障详情',`<div class="callout warn"><b>未授权或暂无可展示保单</b><p>${esc(detail)}</p></div><p class="muted">本页不套用默认保障额度或保费，也不展示固定的演示保单。</p>`,footer);
+      return;
+    }
+    const p=target.product;
+    const rows=[
+      ['保障额度',factMoneyText(p.coverage)],
+      ['年度保费',factMoneyText(p.annual_premium)],
+      ['可售状态',saleStatusText(p.sale_status)],
+      ['数据来源',factValueText(p.source_id)||null],
+      ['数据时点',typeof formatTime==='function'?formatTime(p.source_timestamp):(factValueText(p.source_timestamp)||null)]
+    ].filter(r=>r[1]!=null&&r[1]!=='');
+    // Every field is optional in the projection: if the product fact carries
+    // none of them, say so instead of showing an empty table as if it were data.
+    const body=rows.length
+      ? rows.map(r=>`<div class="stat-row"><span>${esc(r[0])}</span><b>${esc(r[1])}</b></div>`).join('')
+      : '<p class="muted">服务端未返回该保险产品的保障额度、保费或可售状态。</p>';
+    genericModal('保障详情',`<h2>${esc(factValueText(p.name)||target.id)}</h2><p class="muted">保险产品事实 · 产品 ID ${esc(target.id)} · 来自 GET /api/demo-data</p>${body}<div class="callout warn">请重点确认：既往症除外责任、续保条件和免赔额。以上是保险产品事实，不是保单记录；本系统不替代健康告知、核保和理赔审核。</div>`,footer);
     return;
   }
   if(action==='m-deposit-compare'){
