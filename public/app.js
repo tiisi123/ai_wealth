@@ -168,6 +168,7 @@ function genericModal(title, body, footer=''){ const d=$('#globalDialog'); d.cla
 // this work; the /ready 7 checks and real 503 handling belong to the contract
 // area and are registered as a follow-up task in the PR description.
 const SERVICE_HEALTH = { status: 'idle', promise: null, health: null, error: '' };
+const asCount = (v) => (typeof v==='number' && Number.isFinite(v)) ? v.toLocaleString('zh-CN') : '—';
 
 // Timestamps are shown from their literal wall clock (the fixture data calendar,
 // +08:00) instead of the viewer's zone so a UTC-midnight DATE never shifts a day.
@@ -180,6 +181,8 @@ const formatTime = (iso) => iso ? (literalTime(iso) || '—') : '—';
 // The promise is de-duplicated so re-renders cannot flood the endpoint.
 function ensureServiceHealth(){
   if(SERVICE_HEALTH.status==='pending') return SERVICE_HEALTH.promise;
+  // 'ok' and 'error' are terminal for this page view: a satisfied signal on its
+  // own can re-render the page, so only a page-level reload reads it again.
   if(SERVICE_HEALTH.status==='idle') startServiceHealth();
   return SERVICE_HEALTH.promise;
 }
@@ -271,10 +274,17 @@ function serviceHealthCard(){
     const v=target.ready;
     return {label:label||name,text:v===true?yes:v===false?no:'未报告',tone:v===true?'green':v===false?'red':'blue'};
   };
+  // Some dependencies report a boolean `ok` instead of `ready`; both are the
+  // endpoint's own verdict, so each is read from the field it actually returns.
+  const okFlag=(name,label,source)=>{
+    const target=source||{};
+    const v=target.ready!==undefined?target.ready:target.ok;
+    return {label:label||name,text:v===true?'正常':v===false?'异常':'未报告',tone:v===true?'green':v===false?'red':'blue'};
+  };
   const cells=[
     {label:'服务状态',text:String(svc.health.status||'未报告'),tone:svc.health.status==='ok'?'green':'orange'},
-    flag('database',{label:'数据库',yes:'正常',no:'异常',source:deps.database}),
-    flag('shared_document_store',{label:'共享文档存储',yes:'正常',no:'异常',source:deps.shared_document_store}),
+    okFlag('database','数据库',deps.database),
+    okFlag('shared_document_store','共享文档存储',deps.shared_document_store),
     flag('knowledge',{label:'知识库',yes:'就绪',no:'未就绪',source:deps.knowledge}),
     flag('rules',{label:'规则目录',yes:'就绪',no:'未就绪',source:deps.rules}),
     flag('contract',{label:'前后端契约',yes:'一致',no:'不一致',source:deps.contract}),
@@ -334,7 +344,9 @@ function pageWorkspace(){
 }
 
 const fmtPct = value => (value==null?'—':`${(Number(value)*100).toFixed(2)}%`);
-const productRows = () => (sessionApi()?.PRODUCTS && (window.WealthApi?.products?.() || [])) || [];
+// DemoSession.PRODUCTS is the live product map: demo-data.js seeds it and
+// session-sync.js replaceData() swaps it for the server snapshot in place.
+const productRows = () => Object.values(sessionApi()?.PRODUCTS || {});
 // Server product facts (GET /api/demo-data). Each tab maps to real product
 // types; a product that the service does not return is never filled in here.
 const PANEL_SPECS={
@@ -484,7 +496,9 @@ function pageLibrary(){
   const view=viewOf()||'全部产品';
   const all=[['易方达中证A500联接A','基金 · R3 · 权益','大盘宽基，适合长期增长配置','2026-09-26','v2.4','已发布','基金'],['稳盈固收180天','理财 · R2 · 固收','持有期明确，适合稳健底仓','2026-09-25','v1.8','已发布','理财'],['安享长期医疗','保险 · 保障','关注续保条件和既往症责任','2026-09-20','v1.2','待审核','保险'],['安心定期3年','存款 · R1 · 确定性','闲置资金的确定性收益工具','2026-09-18','v3.0','已发布','存款'],['A500 产品评述','观点资产 · 基金','宽基配置解释材料','2026-09-26','v1.0','已发布','观点资产']];
   const rows=all.filter(r=>view==='全部产品'||r[6]===view||r[1].includes(view.replace('产品','')));
-  const knowledge=sessionApi()?.KNOWLEDGE?.()||{};
+  // Knowledge comes from the shared session projection (_knowledge*): there is
+  // no knowledge accessor on the adapter, and that file is not ours to change.
+  const knowledge={version:session()._knowledgeStatus?.knowledge_version||null,documents:session()._knowledgeDocuments||[],chunks:session()._knowledgeChunks||[]};
   const meta=(knowledge.documents||[]).length
     ? `${(knowledge.documents||[]).length} 份文档 · ${(knowledge.chunks||[]).length} 个片段 · 知识版本 ${knowledge.version||'—'}`
     : '暂无已发布产品知识';
@@ -705,6 +719,17 @@ function mobilePage(r){const x={
  'm/assistant':['AI 助手',mobileAssistant], 'm/fund':['基金诊断',mobileFund], 'm/insurance':['保险保障',mobileInsurance], 'm/wealth':['理财产品',mobileWealth], 'm/deposit':['存款测算',mobileDeposit], 'm/private':['私行产品',mobilePrivate], 'm/allocation':['资产配置',mobileAllocation], 'm/holdings':['持仓诊断',mobileHoldings], 'm/candidates':['候选推荐',mobileCandidates], 'm/compare':['产品比较',mobileCompare], 'm/companion':['投后陪伴',mobileCompanion], 'm/result':['执行结果',mobileResult]
  }[r]||['AI 助手',mobileAssistant]; return mobileStage(r,x[0],x[1]()); }
 
+// Tab / segment switching is UI-only state (viewFilter), shared by every page
+// including 手机 tags and PC tabs.
+function activateSegment(btn){
+  if(!btn || btn.dataset.action) return false;
+  const box=btn.closest('.mobile-tags, .segment, [data-tabs], .tabs');
+  if(!box) return false;
+  const label=(btn.dataset.view||btn.textContent||'').trim();
+  setView(label);
+  rerender();
+  return true;
+}
 let __uiBound=false;
 function bindCommon(){
   if(__uiBound) return;
