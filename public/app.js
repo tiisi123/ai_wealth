@@ -163,8 +163,11 @@ function genericModal(title, body, footer=''){ const d=$('#globalDialog'); d.cla
 // 真实状态读取（P-01 / P-11）
 // 只展示服务端真实返回的字段；接口不可达时整块显示未连接，不回落到任何默认数字。
 // ---------------------------------------------------------------------------
-const asCount = (v) => (typeof v==='number' && Number.isFinite(v)) ? v.toLocaleString('zh-CN') : '—';
-const apiData = () => window.WealthApi?.data || {status:'pending',health:null,ready:null,error:''};
+// P-01 reads GET /api/health read-only from this page. The shared-session
+// adapter (session-sync.js) is owned by the contract agent and is not touched by
+// this work; the /ready 7 checks and real 503 handling belong to the contract
+// area and are registered as a follow-up task in the PR description.
+const SERVICE_HEALTH = { status: 'idle', promise: null, health: null, error: '' };
 
 // Timestamps are shown from their literal wall clock (the fixture data calendar,
 // +08:00) instead of the viewer's zone so a UTC-midnight DATE never shifts a day.
@@ -173,36 +176,72 @@ const literalTime = (value) => {
   return m?`${m[1]}${m[2]?` ${m[2]}`:''}`:'';
 };
 const formatTime = (iso) => iso ? (literalTime(iso) || '—') : '—';
+// Fetches GET /api/health once and re-renders when the real payload arrives.
+// The promise is de-duplicated so re-renders cannot flood the endpoint.
+function ensureServiceHealth(){
+  if(SERVICE_HEALTH.status==='pending') return SERVICE_HEALTH.promise;
+  if(SERVICE_HEALTH.status==='idle') startServiceHealth();
+  return SERVICE_HEALTH.promise;
+}
+function startServiceHealth(){
+  SERVICE_HEALTH.status='pending';
+  SERVICE_HEALTH.error='';
+  SERVICE_HEALTH.promise=(async()=>{
+    try{
+      // This is the same real endpoint the page contract already depends on;
+      // no browser-side value ever substitutes for its answer.
+      const response=await fetch('/api/health',{headers:{accept:'application/json'}});
+      const body=await response.json().catch(()=>null);
+      if(!response.ok){
+        SERVICE_HEALTH.status='error';
+        SERVICE_HEALTH.health=null;
+        SERVICE_HEALTH.error=`GET /api/health → HTTP ${response.status}${body?.error?.message?`：${body.error.message}`:''}`;
+      }else if(!body||typeof body!=='object'||!body.dependencies){
+        SERVICE_HEALTH.status='error';
+        SERVICE_HEALTH.health=null;
+        SERVICE_HEALTH.error='GET /api/health 返回内容缺少 dependencies，无法确认服务状态';
+      }else{
+        SERVICE_HEALTH.status='ok';
+        SERVICE_HEALTH.health=body;
+      }
+    }catch(error){
+      SERVICE_HEALTH.status='error';
+      SERVICE_HEALTH.health=null;
+      SERVICE_HEALTH.error=`GET /api/health 请求失败：${error?.message||'网络错误'}`;
+    }
+    if(route()==='pc/architecture') render();
+    return SERVICE_HEALTH;
+  })();
+  return SERVICE_HEALTH.promise;
+}
 function apiStamp(){
-  const svc=apiData();
-  const health=svc.health||{};
+  const health=SERVICE_HEALTH.health||{};
   const model=health.dependencies?.model||{};
   const fixture=health.ai_mode==='fixture'||model.execution_mode==='fixture';
   const version=health.api_version?`api_version ${esc(health.api_version)}`:'api_version 未知';
   const mode=health.ai_mode?`AI_MODE=${esc(health.ai_mode)}`:'AI_MODE 未知';
-  return `${version} · ${mode} · ${fixture?'演示桩 fixture':'真实模型服务'} · 数据版本 ${esc(String(session().dataVersion||'—'))}`;
+  const contract=health.frontend_contract_version?`frontend_contract_version ${esc(health.frontend_contract_version)}`:'frontend_contract_version 未知';
+  return `${version} · ${contract} · ${mode} · ${fixture?'演示桩 fixture':'真实模型服务'} · 数据版本 ${esc(String(session().dataVersion||'—'))}`;
 }
 function serviceSections(){
-  const svc=apiData();
+  const svc=SERVICE_HEALTH;
   if(svc.status==='pending'){
-    return {ok:false,text:'正在读取 GET /api/health 与 GET /ready…',badge:'读取中',tone:'blue'};
+    return {ok:false,text:'正在读取 GET /api/health…',badge:'读取中',tone:'blue'};
   }
-  const stale=[];let tone='green';
-  if(!svc.health) stale.push('GET /api/health');
-  if(!svc.ready) stale.push('GET /ready');
-  if(stale.length){
-    const error=esc(svc.error||'服务端真实错误');
-    tone='red';
-    return {ok:false,badge:'未连接',tone,
-      text:`服务健康度不可用：${stale.join(' 与 ')} 未返回成功响应。服务端错误：${error}。本次不展示任何默认指标，请检查共享应用服务后刷新重试。`};
+  if(!svc.health){
+    return {ok:false,badge:'共享应用服务未连接',tone:'red',
+      text:`服务健康度不可用：GET /api/health 未返回成功响应。服务端错误：${esc(svc.error||'无响应')}。本次不展示任何默认指标，请检查共享应用服务后刷新重试。`};
   }
-  tone=svc.ready.ready?'green':'orange';
-  return {ok:true,badge:svc.ready.ready?'就绪':'未就绪',tone,
-    text:`GET /api/health 与 GET /ready 已返回：服务状态 ${esc(String(svc.health.status||'—'))}，就绪状态 ${svc.ready.ready?'就绪':'未就绪'}，生成时间 ${formatTime(svc.health.generated_at)}。`};
+  // `status` is the only overall health verdict the endpoint publishes; the
+  // per-dependency `ready` flags below are shown separately and honestly.
+  const overall=String(svc.health.status||'');
+  const tone=overall==='ok'?'green':'orange';
+  return {ok:true,badge:overall?overall:'未报告',tone,
+    text:`GET /api/health 已返回：服务状态 ${esc(overall||'—')}，生成时间 ${formatTime(svc.health.generated_at)}。逐项就绪判定由 GET /ready 提供，属 contract 后续任务，本页暂不展示。`};
 }
 function serviceSummary(){
-  const svc=apiData();
-  if(!svc.health){ return `<div class="callout warn"><b>共享应用服务未连接</b><p>GET /api/health 与 GET /ready 尚未返回，能力与调用量没有服务端来源，本次不展示任何默认数字。</p><p class="muted">${esc(svc.error||'等待应用服务响应')}</p></div>`; }
+  const svc=SERVICE_HEALTH;
+  if(!svc.health){ return `<div class="callout warn"><b>共享应用服务未连接</b><p>GET /api/health 尚未返回，能力与调用量没有服务端来源，本次不展示任何默认数字。</p><p class="muted">${esc(svc.error||'等待应用服务响应')}</p></div>`; }
   const h=svc.health;
   const deps=h.dependencies||{};
   const items=[
@@ -219,44 +258,56 @@ function serviceSummary(){
   return `<div class="list-row"><h3>服务字段（GET /api/health）</h3>${items.map(x=>row(x[0],x[1])).join('')}${row('服务生成时间',formatTime(h.generated_at))}</div>${row('知识片段数',asCount(deps.knowledge?.chunk_count))}${row('知识向量数',asCount(deps.knowledge?.vector_count))}${row('规则条目',asCount(deps.rules?.count))}`;
 }
 function serviceHealthCard(){
-  const svc=apiData();
-  if(svc.status==='pending') return `<div class="callout">正在读取服务健康度（GET /api/health、GET /ready）…</div>`;
-  if(!svc.ready||!svc.health) return `<div class="callout warn"><b>共享应用服务未连接</b><p>服务健康度没有服务端来源，本次不展示任何默认数字或健康徽标。</p><p class="muted">${esc(svc.error||'')}</p></div>`;
+  const svc=SERVICE_HEALTH;
+  if(svc.status==='pending') return `<div class="callout">正在读取服务健康度（GET /api/health）…</div>`;
+  if(!svc.health) return `<div class="callout warn"><b>共享应用服务未连接</b><p>服务健康度没有服务端来源，本次不展示任何默认数字或健康徽标。</p><p class="muted">${esc(svc.error||'')}</p></div>`;
   const deps=svc.health.dependencies||{};
-  // GET /ready reports the 7 checks in `checks`; dependency objects carry the
-  // detail (ok / configured / status). The check result wins, and an unknown
-  // check value is shown as 未报告 instead of being filled in.
-  const check=(name)=>svc.ready.checks?.[name];
-  const tri=(name,{yes,no})=>{
-    const v=check(name);
-    return v===true?{label:name,text:yes,tone:'green'}:v===false?{label:name,text:no,tone:'red'}:{label:name,text:'未报告',tone:'blue'};
+  // Only fields this endpoint actually returns are rendered. `dependencies.ready`
+  // is the per-dependency verdict published by /api/health (it does not publish
+  // the /ready check set), so a missing flag is shown as 未报告 rather than
+  // inferred as healthy.
+  const flag=(name,{label,yes,no,source})=>{
+    const target=source||{};
+    const v=target.ready;
+    return {label:label||name,text:v===true?yes:v===false?no:'未报告',tone:v===true?'green':v===false?'red':'blue'};
   };
-  // A healthy check renders no badge, so its value is never squeezed out by its
-  // own label; only failing / unreported checks carry a badge.
   const cells=[
-    {label:'服务就绪',text:svc.ready.ready===true?'就绪':svc.ready.ready===false?'未就绪':'未报告',tone:svc.ready.ready===false?'orange':'blue'},
-    tri('data_mode',{yes:'满足',no:'不满足'}),
-    tri('contract',{yes:'一致',no:'不一致'}),
-    tri('database',{yes:'正常',no:'异常'}),
-    tri('shared_document_store',{yes:'正常',no:'异常'}),
-    tri('knowledge',{yes:'就绪',no:'未就绪'}),
-    tri('rules',{yes:'就绪',no:'未就绪'}),
-    tri('model',{yes:'已配置',no:'未配置'})
+    {label:'服务状态',text:String(svc.health.status||'未报告'),tone:svc.health.status==='ok'?'green':'orange'},
+    flag('database',{label:'数据库',yes:'正常',no:'异常',source:deps.database}),
+    flag('shared_document_store',{label:'共享文档存储',yes:'正常',no:'异常',source:deps.shared_document_store}),
+    flag('knowledge',{label:'知识库',yes:'就绪',no:'未就绪',source:deps.knowledge}),
+    flag('rules',{label:'规则目录',yes:'就绪',no:'未就绪',source:deps.rules}),
+    flag('contract',{label:'前后端契约',yes:'一致',no:'不一致',source:deps.contract}),
+    flag('data_mode',{label:'数据模式',yes:'满足',no:'不满足',source:deps.data_mode}),
+    flag('model',{label:'AI 生成服务',yes:'已配置',no:'未配置',source:modelFlag(deps.model)})
   ];
-  const cell=(c)=>`<div class="mini-stat"><small class="muted">${esc(c.label)}</small><h3>${esc(c.text)}</h3>${c.tone==='green'?'':statusBadge(c.tone==='red'?'检查未通过':c.text,c.tone==='red'?'red':'orange')}</div>`;
-  return `<div class="grid two">${cells.map(cell).join('')}</div><p class="muted">checks 来自 GET /ready 的 7 项检查；服务状态 ${esc(String(svc.health.status||'—'))}。未由服务端提供的指标（如调用量、专业评测通过率）一律不展示。</p>`;
+  // A healthy cell renders no badge, so its value is never squeezed out by its
+  // own label; only failing / unreported cells carry one.
+  const cell=(c)=>`<div class="mini-stat"><small class="muted">${esc(c.label)}</small><h3>${esc(c.text)}</h3>${c.tone==='green'?'':statusBadge(c.text,c.tone==='red'?'red':'orange')}</div>`;
+  return `<div class="grid two">${cells.map(cell).join('')}</div><p class="muted">dependencies 来自 GET /api/health；GET /ready 的 7 项 checks 与真实 503 处理属 contract 后续任务，本页不展示、也不推断未返回的就绪标记。未由服务端提供的指标（如调用量、专业评测通过率）一律不展示。</p>`;
+}
+// /api/health publishes the model dependency as `configured`, not `ready`, so it
+// is mapped explicitly; anything else is reported as 未报告.
+function modelFlag(model){
+  if(!model||typeof model!=='object') return {};
+  return {ready:typeof model.configured==='boolean'?model.configured:undefined};
 }
 
 function pageArchitecture(){
   const svc=serviceSections();
+  // Kicking the read here (not at boot) keeps every other route free of an
+  // extra request; a second render reuses the in-flight promise.
+  ensureServiceHealth();
   const blocks=[
     {title:'服务健康度',head:serviceHealthCard()},
     {title:'服务字段',head:serviceSummary()}
   ];
   const main=svc.ok
     ? blocks.map(b=>`<div class="card"><div class="between"><h3>${b.title}</h3>${statusBadge(svc.badge,svc.tone)}</div>${b.head}</div>`).join('')
-    : `<div class="card"><div class="between"><h3>服务健康度与能力指标</h3>${statusBadge('共享应用服务未连接','red')}</div><div class="callout warn"><b>共享应用服务未连接</b><p>GET /api/health 与 GET /ready 未返回成功响应，能力指标与健康度没有服务端来源。本次不展示任何默认数字，也没有展示成功结果。</p><p class="muted">服务端错误：${esc(apiData().error||'—')}</p></div></div>`;
-  return pageHeading('CONTROL TOWER','AI 财富管理智能服务中台','面向全集团统一运营的能力总览。本页指标只来自共享应用服务（GET /api/health、GET /ready），无服务端来源的指标不展示。',btn('需求清单','requirements','light')+btn('进入投研工作台','go-workspace','primary'))
+    : svc.badge==='读取中'
+      ? `<div class="card"><div class="between"><h3>服务健康度与能力指标</h3>${statusBadge('读取中','blue')}</div><div class="callout">正在读取 GET /api/health…</div></div>`
+      : `<div class="card"><div class="between"><h3>服务健康度与能力指标</h3>${statusBadge('共享应用服务未连接','red')}</div><div class="callout warn"><b>共享应用服务未连接</b><p>GET /api/health 未返回成功响应，能力指标与健康度没有服务端来源。本次不展示任何默认数字，也没有展示成功结果。</p><p class="muted">服务端错误：${esc(SERVICE_HEALTH.error||'—')}</p></div></div>`;
+  return pageHeading('CONTROL TOWER','AI 财富管理智能服务中台','面向全集团统一运营的能力总览。本页指标只来自共享应用服务（GET /api/health），无服务端来源的指标不展示。',btn('需求清单','requirements','light')+btn('进入投研工作台','go-workspace','primary'))
     +`<div class="insight-banner"><span class="insight-kicker">实时态</span><div><b>${esc(apiStamp())}</b><p class="muted" style="margin:4px 0 0">${esc(svc.text)}</p></div></div>`
     +`<div class="grid main-aside"><div class="stack">${main}<div class="card"><div class="card-head"><div><h2>能力编排总览</h2><p class="muted">从数据、知识到可交付服务的受控链路</p></div></div><div class="flow"></div></div></div>`
     +`<aside class="stack"><div class="card"><div class="card-head"><h2>近期任务</h2><button class="link-btn" data-action="task-center">任务中心 ${icon('arrow')}</button></div><div class="task-line"><span class="task-dot">${icon('bell')}</span><div class="task-text"><b>当前无待处理事项</b><p>应用服务没有提供待处理事项，本页不展示默认条数。</p></div>${statusBadge('空态','blue')}</div></div>`
@@ -279,7 +330,7 @@ function pageWorkspace(){
     : `<div class="card"><div class="card-head"><h2>最近使用</h2><button class="link-btn" data-action="go-research">打开研究台 ${icon('arrow')}</button></div><div class="task-line"><span class="task-dot">${icon('book')}</span><div class="task-text"><b>当前无最近使用记录</b><p>应用服务没有提供个人工作区条目，本页不展示演示草稿。</p></div>${statusBadge('空态','blue')}</div></div>`;
   const alerts=(s.activities||[]).slice(-3,).reverse();
   const alertCard=`<div class="card"><div class="card-head"><h2>消息提醒</h2>${statusBadge(alerts.length?`${alerts.length} 条`:'空态',alerts.length?'orange':'blue')}</div>${alerts.length?alerts.map(a=>`<div class="list-row"><h3>${esc(a.title||a.kind)}</h3><p class="muted">${esc(a.kind)} · ${esc(a.created_at)}</p></div>`).join(''):'<div class="list-row"><h3>当前无消息提醒</h3><p class="muted">应用服务没有写入提醒记录。</p></div>'}</div>`;
-  return pageHeading('ROLE WORKSPACE','投研工作台',`按岗位展示最近使用、推荐任务和授权成果。当前身份：${esc(role)}。`,btn('打开智能问答','go-research','primary'))+`<div class="grid main-aside"><div class="stack"><div class="card"><div class="card-head"><div><h2>今天从哪里开始？</h2><p class="muted">可以直接输入问题，也可以从推荐任务开始。</p></div>${apiData().health?'已连接共享应用服务':'共享应用服务未连接'}</div><div class="prompt-box"><textarea id="workspacePrompt" placeholder="例如：比较固收+产品近一年回撤，并给出客户经理可解释的话术">${esc((ans&&ans.question)||'')}</textarea><div class="prompt-footer"><span class="muted">${icon('shield')} 只使用当前岗位有权访问的资料</span>${btn('开始分析','ask','primary')}</div></div><div class="prompt-quick"><button data-action="quick-prompt">生成本周客户持仓复盘</button><button data-action="quick-prompt">解释最新宏观数据</button><button data-action="quick-prompt">找 3 只稳健型候选产品</button></div></div>${answerCard}</div><aside class="stack"><div class="card"><div class="card-head"><h2>按权限可用</h2>${statusBadge(role,'blue')}</div>${caps.map(x=>`<div class="list-row"><h3>${x[0]}</h3><p class="muted">${x[1]}</p></div>`).join('')}</div>${alertCard}</aside></div>`;
+  return pageHeading('ROLE WORKSPACE','投研工作台',`按岗位展示最近使用、推荐任务和授权成果。当前身份：${esc(role)}。`,btn('打开智能问答','go-research','primary'))+`<div class="grid main-aside"><div class="stack"><div class="card"><div class="card-head"><div><h2>今天从哪里开始？</h2><p class="muted">可以直接输入问题，也可以从推荐任务开始。</p></div>${SERVICE_HEALTH.health?'已连接共享应用服务':'共享应用服务未连接'}</div><div class="prompt-box"><textarea id="workspacePrompt" placeholder="例如：比较固收+产品近一年回撤，并给出客户经理可解释的话术">${esc((ans&&ans.question)||'')}</textarea><div class="prompt-footer"><span class="muted">${icon('shield')} 只使用当前岗位有权访问的资料</span>${btn('开始分析','ask','primary')}</div></div><div class="prompt-quick"><button data-action="quick-prompt">生成本周客户持仓复盘</button><button data-action="quick-prompt">解释最新宏观数据</button><button data-action="quick-prompt">找 3 只稳健型候选产品</button></div></div>${answerCard}</div><aside class="stack"><div class="card"><div class="card-head"><h2>按权限可用</h2>${statusBadge(role,'blue')}</div>${caps.map(x=>`<div class="list-row"><h3>${x[0]}</h3><p class="muted">${x[1]}</p></div>`).join('')}</div>${alertCard}</aside></div>`;
 }
 
 const fmtPct = value => (value==null?'—':`${(Number(value)*100).toFixed(2)}%`);
@@ -810,7 +861,6 @@ window.addEventListener('wealth-session-ready',(event)=>{
   render();
 });
 window.addEventListener('wealth-data-ready',render);
-window.addEventListener('wealth-service-status',render);
 window.addEventListener('wealth-session-sync-error',(event)=>{
   // A failed initial read (session, shared data or /api/health) is deliberately
   // NOT routed to a landing page: a result screen would hide the source page's
