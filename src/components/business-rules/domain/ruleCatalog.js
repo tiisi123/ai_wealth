@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { ValidationError } from '../../../platform/http/errors.js';
+import { DEPOSIT_MAX_ANNUAL_RATE_DECIMAL } from './depositCalculation.js';
 
 export function normalizeRisk(value) {
   const match = String(value || '').match(/R([1-5])/i);
@@ -57,6 +58,17 @@ export function executeRule(rule, inputs) {
     const years = Number(inputs.years);
     if (![principal, annual_rate, years].every(Number.isFinite) || principal <= 0 || annual_rate < 0 || years <= 0) {
       throw new ValidationError('存款测算输入必须为有效的正数', { fields: ['principal', 'annual_rate', 'years'] });
+    }
+    // P-04 单位防御：annual_rate 按小数使用（2.15% → 0.0215）。传入百分数 2.15 会放大 100 倍，
+    // 因此在规则层直接拒绝超上限值，而不是产出错误本息。百分数请先经
+    // depositCalculation.normalizeDepositInputs({ rate_unit: 'percent' }) 归一。
+    if (annual_rate > DEPOSIT_MAX_ANNUAL_RATE_DECIMAL) {
+      throw new ValidationError(`annual_rate 必须为小数口径（2.15% 应传 0.0215），当前值 ${annual_rate} 超出上限`, {
+        fields: ['annual_rate'],
+        annual_rate,
+        rate_unit: 'decimal',
+        max_annual_rate: DEPOSIT_MAX_ANNUAL_RATE_DECIMAL
+      });
     }
     const interest = Number((principal * annual_rate * years).toFixed(2));
     return {
