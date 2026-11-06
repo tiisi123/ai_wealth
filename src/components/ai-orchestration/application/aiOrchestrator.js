@@ -1,6 +1,7 @@
-import { createHash } from 'node:crypto';
 import { ConflictError, DependencyUnavailableError, InsufficientEvidenceError, ValidationError } from '../../../platform/http/errors.js';
 import { assertTaskType, sanitizeTaskInput, systemPromptFor } from '../domain/tasks.js';
+import { computePortfolio, toEvidenceCalculation } from '../domain/portfolioCalculation.js';
+export { computePortfolio, toEvidenceCalculation, CONCENTRATION_BASIS, PORTFOLIO_CALCULATION_VERSION, HOLDING_RETURN_BASIS, HOLDING_RETURN_LEVEL } from '../domain/portfolioCalculation.js';
 
 const KNOWLEDGE_REQUIRED = new Set(['research_qa', 'report_summary', 'writing_draft']);
 const KNOWLEDGE_OPTIONAL = new Set(['assistant_qa', 'diagnosis_explain', 'candidate_explain', 'product_explain']);
@@ -104,32 +105,10 @@ export function finalizeEvidence(evidence, ruleResult = null) {
   return finalized;
 }
 
+// P-15：证据包与只读计算入口共用 domain/portfolioCalculation.js，避免出现两套分母；
+// 证据包只取原有字段，保持既有证据结构与 calculation_id 不变。
 function portfolioCalculation(holdings) {
-  const inputs = holdings
-    .map((holding) => ({
-      holding_id: holding.id || holding.holding_id,
-      product_id: holding.product_id,
-      amount: Number(holding.amount)
-    }))
-    .sort((a, b) => String(a.holding_id).localeCompare(String(b.holding_id)));
-  if (!inputs.length || inputs.some((holding) => !holding.holding_id || !Number.isFinite(holding.amount) || holding.amount < 0)) {
-    throw new InsufficientEvidenceError('本地持仓计算缺少有效持仓金额', { task_type: 'diagnosis_explain' });
-  }
-  const total = inputs.reduce((sum, holding) => sum + holding.amount, 0);
-  if (!(total > 0)) throw new InsufficientEvidenceError('投资持仓合计必须大于零', { task_type: 'diagnosis_explain' });
-  const weights = inputs.map((holding) => ({
-    holding_id: holding.holding_id,
-    product_id: holding.product_id,
-    data_id: `holding:${holding.holding_id}`,
-    weight: holding.amount / total
-  }));
-  return {
-    calculation_id: `portfolio-${createHash('sha256').update(JSON.stringify(inputs)).digest('hex').slice(0, 20)}`,
-    data_ids: inputs.map((holding) => `holding:${holding.holding_id}`),
-    total_amount: total,
-    weights,
-    max_concentration: Math.max(...weights.map((holding) => holding.weight))
-  };
+  return toEvidenceCalculation(computePortfolio({ holdings, products: [] }));
 }
 
 function scopeTaskFacts({ taskType, snapshot, session, productIds }) {
