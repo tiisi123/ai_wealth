@@ -47,8 +47,10 @@ export class BusinessRulesService {
    * - annual_rate: 年利率；rate_unit='decimal'（默认，规则目录口径）时传 0.0215；
    *                rate_unit='percent' 时传 2.15，入口内 /100
    * - years: 年，> 0
+   * 数值可直接传 number 或数据源给的十进制字符串（pg NUMERIC 以字符串返回，如 "0.0215"）；
+   * null / 空串 / 指数写法 / 非数字一律 400 VALIDATION_ERROR，绝不静默当作 0。
    * 返回：{ status:'MATCHED', rule_id, rule_version, calculation_id, rate_unit, inputs{numeric},
-   *         inputs_echo（回显调用方单位）, result{ principal, annual_rate(小数), years, interest,
+   *         inputs_echo（回显调用方单位与原始入参）, result{ principal, annual_rate(小数), years, interest,
    *         maturity_amount, formula }, source{...} }
    * 不存在该规则/版本 → { status:'UNSUPPORTED_RULE' }；输入非法 → 抛 VALIDATION_ERROR。
    */
@@ -79,6 +81,7 @@ export class BusinessRulesService {
       ...executed,
       rate_unit: normalized.rate_unit_input,
       inputs,
+      // 回显保留调用方原始入参与单位口径（例如 percent 口径回显 2.15），与 inputs 的归一小数区分开。
       inputs_echo: { principal, annual_rate, years, rate_unit: normalized.rate_unit_input },
       result: { ...executed.result, formula: describeDepositFormula(inputs) }
     };
