@@ -471,9 +471,19 @@ function pageWorkspace(){
   const answerCard=ans
     ? `<div class="card"><div class="card-head"><h2>本次研究回答</h2><span class="muted">数据时点 ${esc(s.asOfFull||'—')}</span></div><div class="chat-bubble"><div class="chat-name">${icon('spark')} 财富智服 · 研究回答</div><p><b>问题：</b>${esc(ans.question)}</p><p>${esc(ans.text)}</p><div class="chips">${(ans.sources||[]).map(x=>`<button class="source" data-action="source-detail">${esc(x)}</button>`).join('')}</div></div><div class="callout warn">研究参考，不构成投资建议。候选排序不替代适当性结论。</div>${btn('查看候选解释','go-pc-candidates','primary full')}</div>`
     : `<div class="card"><div class="card-head"><h2>最近使用</h2><button class="link-btn" data-action="go-research">打开研究台 ${icon('arrow')}</button></div><div class="task-line"><span class="task-dot">${icon('book')}</span><div class="task-text"><b>当前无最近使用记录</b><p>应用服务没有提供个人工作区条目，本页不展示演示草稿。</p></div>${statusBadge('空态','blue')}</div></div>`;
-  const alerts=(s.activities||[]).slice(-3,).reverse();
-  const alertCard=`<div class="card"><div class="card-head"><h2>消息提醒</h2>${statusBadge(alerts.length?`${alerts.length} 条`:'空态',alerts.length?'orange':'blue')}</div>${alerts.length?alerts.map(a=>`<div class="list-row"><h3>${esc(a.title||a.kind)}</h3><p class="muted">${esc(a.kind)} · ${esc(a.created_at)}</p></div>`).join(''):'<div class="list-row"><h3>当前无消息提醒</h3><p class="muted">应用服务没有写入提醒记录。</p></div>'}</div>`;
-  return pageHeading('ROLE WORKSPACE','投研工作台',`按岗位展示最近使用、推荐任务和授权成果。当前身份：${esc(role)}。`,btn('打开智能问答','go-research','primary'))+`<div class="grid main-aside"><div class="stack"><div class="card"><div class="card-head"><div><h2>今天从哪里开始？</h2><p class="muted">可以直接输入问题，也可以从推荐任务开始。</p></div>${SERVICE_HEALTH.health?'已连接共享应用服务':'共享应用服务未连接'}</div><div class="prompt-box"><textarea id="workspacePrompt" placeholder="例如：比较固收+产品近一年回撤，并给出客户经理可解释的话术">${esc((ans&&ans.question)||'')}</textarea><div class="prompt-footer"><span class="muted">${icon('shield')} 只使用当前岗位有权访问的资料</span>${btn('开始分析','ask','primary')}</div></div><div class="prompt-quick"><button data-action="quick-prompt">生成本周客户持仓复盘</button><button data-action="quick-prompt">解释最新宏观数据</button><button data-action="quick-prompt">找 3 只稳健型候选产品</button></div></div>${answerCard}</div><aside class="stack"><div class="card"><div class="card-head"><h2>按权限可用</h2>${statusBadge(role,'blue')}</div>${caps.map(x=>`<div class="list-row"><h3>${x[0]}</h3><p class="muted">${x[1]}</p></div>`).join('')}</div>${alertCard}</aside></div>`;
+  // H-01：最近使用、推荐任务与消息提醒只显示服务端 activities[] 的真实记录
+  // （activity_id / created_at / data_version）；服务端没有个人工作区存储，
+  // 也就没有推荐任务来源，列表为空时给显式空态，不用演示待办或固定条数补齐。
+  const activities=(s.activities||[]);
+  const recent=activities.slice(-3).reverse();
+  const activityRow=(a)=>`<div class="list-row"><h3>${esc(a.title||a.kind)}</h3><p class="muted">${esc(a.kind)} · ${esc(String(a.created_at||''))} · <code>${esc(String(a.activity_id||''))}</code> · 数据版本 ${esc(String(a.data_version||''))}</p></div>`;
+  const alerts=recent;
+  const alertCard=`<div class="card"><div class="card-head"><h2>消息提醒</h2>${statusBadge(alerts.length?`${alerts.length} 条`:'空态',alerts.length?'orange':'blue')}</div>${alerts.length?alerts.map(a=>`<div class="list-row"><h3>${esc(a.title||a.kind)}</h3><p class="muted">${esc(a.kind)} · ${esc(String(a.created_at||''))}</p></div>`).join(''):'<div class="list-row"><h3>当前无消息提醒</h3><p class="muted">应用服务没有写入提醒记录。</p></div>'}</div>`;
+  const recentCard=recent.length
+    ? `<div class="card"><div class="card-head"><h2>最近使用</h2>${statusBadge(`服务端记录 ${activities.length} 条`,'green')}</div>${recent.map(activityRow).join('')}${btn('查看全部服务端记录','workspace','primary full')}</div>`
+    : `<div class="card"><div class="card-head"><h2>最近使用</h2>${statusBadge('空态','blue')}</div><div class="task-line"><span class="task-dot">${icon('book')}</span><div class="task-text"><b>当前无最近使用记录</b><p>应用服务没有写入个人工作区记录；系统不展示演示草稿或推荐任务。</p></div></div>${btn('查看服务端记录','workspace','full')}</div>`;
+  const recommendCard=`<div class="card"><div class="card-head"><h2>推荐任务</h2>${statusBadge('未提供','blue')}</div><div class="callout">应用服务没有推荐任务的数据来源，本页不展示演示待办；可从上方输入问题，或在「按权限可用」选择本岗位的入口。</div></div>`;
+  return pageHeading('ROLE WORKSPACE','投研工作台',`按岗位展示最近使用、推荐任务和授权成果。当前身份：${esc(role)}。`,btn('打开智能问答','go-research','primary'))+`<div class="grid main-aside"><div class="stack"><div class="card"><div class="card-head"><div><h2>今天从哪里开始？</h2><p class="muted">可以直接输入问题，也可以从本岗位的可用入口开始。</p></div>${SERVICE_HEALTH.health?'已连接共享应用服务':'共享应用服务未连接'}</div><div class="prompt-box"><textarea id="workspacePrompt" placeholder="例如：比较固收+产品近一年回撤，并给出客户经理可解释的话术">${esc((ans&&ans.question)||'')}</textarea><div class="prompt-footer"><span class="muted">${icon('shield')} 只使用当前岗位有权访问的资料</span>${btn('开始分析','ask','primary')}</div></div><div class="prompt-quick"><button data-action="quick-prompt">生成本周客户持仓复盘</button><button data-action="quick-prompt">解释最新宏观数据</button><button data-action="quick-prompt">找 3 只稳健型候选产品</button></div></div>${answerCard}${recentCard}</div><aside class="stack"><div class="card"><div class="card-head"><h2>按权限可用</h2>${statusBadge(role,'blue')}</div>${caps.map(x=>`<div class="list-row"><h3>${x[0]}</h3><p class="muted">${x[1]}</p></div>`).join('')}</div>${recommendCard}${alertCard}</aside></div>`;
 }
 
 const fmtPct = value => (value==null?'—':`${(Number(value)*100).toFixed(2)}%`);
@@ -747,19 +757,112 @@ function pageCandidates(){
   const s=session();
   const g=s.goal||sessionApi()?.DEFAULT_GOAL||{};
   const ids=candidateIds();
-  const view=viewOf()||'综合排序';
-  const ordered=ids.slice().sort((a,b)=>{
-    const pa=productOf(a)||{}, pb=productOf(b)||{};
-    if(view==='收益优先') return (parseFloat(pb.ret)||0) - (parseFloat(pa.ret)||0);
-    if(view==='流动性优先') return String(pa.liquidity||'').localeCompare(String(pb.liquidity||''));
-    return (parseFloat(pb.match)||0) - (parseFloat(pa.match)||0);
-  });
-  const rows=ordered.map(id=>{
+  // H-02：排序、理由与约束只取服务端 candidateCalculation.reasons[]（generate_candidates 写入）。
+  // 页面不再用 p.match 当适配度（session-sync.js 已把它覆盖成「—」），也不在浏览器推导分数：
+  // 顺序沿用服务端给出的顺序（风险档升序 + product_id），理由与 constraints / holding_months 逐条展示。
+  const calc=s.candidateCalculation&&typeof s.candidateCalculation==='object'?s.candidateCalculation:null;
+  const reasons=Array.isArray(calc?.reasons)?calc.reasons:[];
+  const reasonOf=(id)=>reasons.find(r=>r&&r.product_id===id)||null;
+  const REASON_LABEL={risk_term_liquidity_sale_checked:'风险、期限、流动性与可售状态均通过校验',holding_period_exceeds_liquidity_or_term:'持有期超过流动性需求或目标期限',risk_above_customer:'风险等级高于客户风险等级',risk_above_goal:'风险等级高于目标风险等级',not_on_sale:'产品不可售',risk_level_unknown:'风险等级缺失'};
+  const monthsText=(months)=>{const n=numOrNull(months); return n==null||n<=0?'':`${Number.isInteger(n)?n:n.toFixed(1)} 个月`;};
+  const constraintsText=(entry)=>{
+    const c=entry?.constraints||{};
+    const parts=[];
+    const holdMonths=monthsText(entry?.holding_months);
+    if(holdMonths) parts.push(`持有期 ${holdMonths}`);
+    if(c.goal_term) parts.push(`目标期限 ${c.goal_term}`);
+    if(c.goal_liquidity) parts.push(`流动性需求「${c.goal_liquidity}」`);
+    if(c.customer_risk||c.goal_risk) parts.push(`风险 客户 ${c.customer_risk||'—'} / 目标 ${c.goal_risk||'—'}`);
+    if(c.sale_status) parts.push(`可售状态 ${c.sale_status}`);
+    return parts.join(' · ');
+  };
+  const rankText=(id,pos)=>{
+    const entry=reasonOf(id);
+    if(!entry) return '';
+    return [`第 ${pos+1} 条（服务端 candidateCalculation 顺序：风险档由低到高、同档按 product_id）`,REASON_LABEL[entry.reason]||entry.reason||''].filter(Boolean).join(' · ');
+  };
+  const fallback='服务端未返回该候选的 candidateCalculation 理由';
+  const rows=ids.map((id,pos)=>{
     const p=productOf(id)||{};
-    return `<tr><td><b>${esc(p.name||id)}</b><br><span class="muted">${esc(p.detail||p.type||'')}</span></td><td>${esc(p.role||'')}</td><td>${esc(p.ret||'')}</td><td>${esc(p.drawdown||'—')}</td><td>${statusBadge(p.match||'—','green')}</td><td><button class="btn small" data-action="m-candidate-reason" data-product="${esc(id)}">解释</button></td></tr>`;
+    const entry=reasonOf(id);
+    const reasonText=rankText(id,pos);
+    const constraint=constraintsText(entry);
+    return `<tr><td><b>${esc(p.name||id)}</b><br><span class="muted">${esc(p.detail||p.type||'')}</span></td><td>${esc(p.role||'')}</td><td>${esc(p.ret||'—')}</td><td>${esc(p.drawdown||'—')}</td><td><small class="${entry?'':'muted'}">${esc(reasonText||fallback)}</small></td><td><small class="${constraint?'':'muted'}">${esc(constraint||fallback)}</small></td><td><button class="btn small" data-action="m-candidate-reason" data-product="${esc(id)}">解释</button></td></tr>`;
   }).join('');
-  const empty=`<tr><td colspan="6">尚未生成候选。请先在资产配置页生成方案，再生成真实候选；系统不会补入默认产品。</td></tr>`;
-  return pageHeading('CANDIDATE POOL','候选产品池','把客户金额、期限、风险、流动性和资金用途转成结构化条件，再从我行可售范围内排序。',btn('打开比较','go-pc-compare','')+btn('生成候选池','generate-candidates','primary'))+`<div class="card"><div class="form-grid three"><label>资金金额<input value="${esc(g.amount||'—')}"/></label><label>投资期限<select><option>${esc(g.term||'—')}</option></select></label><label>风险等级<select><option>${esc(g.risk||'—')}</option></select></label><label>流动性需求<select><option>${esc(g.liquidity||'—')}</option></select></label><label>资金用途<select><option>${esc(g.purpose||'—')}</option></select></label><label>产品偏好<select><option>不限</option></select></label></div><div class="between section-space"><span class="muted">已校验：${esc(goalText())}</span>${btn('同步林女士方案','generate-candidates','primary')}</div></div><div class="grid main-aside section-space"><div class="card"><div class="card-head"><div><h2>${ids.length?`为林女士找到 ${ids.length} 个候选`:'当前没有候选产品'}</h2><p class="muted">${s.researchAnswer?'已关联投研问答来源 · ':''}按“组合角色 + 适配前提 + 风险”排序</p></div><div class="segment">${['综合排序','收益优先','流动性优先'].map(x=>tabBtn(x,'综合排序')).join('')}</div></div><div class="table-wrap"><table><thead><tr><th>产品</th><th>组合作用</th><th>近一年</th><th>最大回撤</th><th>适配度</th><th>动作</th></tr></thead><tbody>${rows||empty}</tbody></table></div></div><aside class="stack"><div class="card"><div class="card-head"><h2>筛选解释</h2>${statusBadge('可核验','green')}</div><div class="attention"><span class="attention-icon">${icon('check')}</span><div><h4>候选排序不替代适当性结论</h4><p>排序只代表模型对输入条件的匹配程度，最终由客户经理确认。</p></div></div>${s.researchAnswer?`<div class="callout">研究依据：${esc((s.researchAnswer.sources||[]).join(' · '))}</div>`:''}<div class="divider"></div><h3>替代方向</h3><p class="muted">如果客户需要 3 个月内可用资金，可将固收底仓切换为现金管理类产品。</p></div></aside></div>`;
+  // H-02：无候选时给引导空态，不渲染只有表头的空表。候选为空是可达状态
+  //（未生成方案就进入本页，或 generate_candidates 尚未调用）。
+  const goals=[g.amount,g.term,g.risk,g.liquidity,g.purpose].filter(Boolean).map(x=>esc(x)).join(' · ');
+  const emptyBody=s.plan
+    ? `<div class="callout warn"><b>当前没有候选产品</b><p>已存在配置方案，但应用服务尚未写入候选。候选只由 generate_candidates 写入，系统不会补入默认产品，也不会展示空的候选表。</p><p class="muted">当前目标：${goals||'—'}</p></div><div class="path-next">${btn('生成候选池','generate-candidates','primary')}</div>`
+    : `<div class="callout warn"><b>请先完成资产配置</b><p>候选产品由「资产配置 → 生成方案 → 生成候选」的服务端链路写入；当前会话没有配置方案，因此没有候选可展示。系统不会补入默认产品，也不会展示空的候选表。</p><p class="muted">当前目标：${goals||'—'}</p></div><div class="path-next"><a class="btn primary" href="#m/allocation" data-action="open-route" data-route="m/allocation">去做资产配置</a></div>`;
+  const table=ids.length
+    ? `<div class="table-wrap"><table><thead><tr><th>产品</th><th>组合作用</th><th>近一年</th><th>最大回撤</th><th>排序依据</th><th>约束（candidateCalculation.reasons[]）</th><th>动作</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    : emptyBody;
+  return pageHeading('CANDIDATE POOL','候选产品池','把客户金额、期限、风险、流动性和资金用途转成结构化条件，再从我行可售范围内排序。',btn('打开比较','go-pc-compare','')+btn('生成候选池','generate-candidates','primary'))+`<div class="card"><div class="form-grid three"><label>资金金额<input value="${esc(g.amount||'—')}"/></label><label>投资期限<select><option>${esc(g.term||'—')}</option></select></label><label>风险等级<select><option>${esc(g.risk||'—')}</option></select></label><label>流动性需求<select><option>${esc(g.liquidity||'—')}</option></select></label><label>资金用途<select><option>${esc(g.purpose||'—')}</option></select></label><label>产品偏好<select><option>不限</option></select></label></div><div class="between section-space"><span class="muted">已校验：${esc(goalText())}</span>${btn('同步林女士方案','generate-candidates','primary')}</div></div><div class="grid main-aside section-space"><div class="card"><div class="card-head"><div><h2>${ids.length?`为林女士找到 ${ids.length} 个候选`:'当前没有候选产品'}</h2><p class="muted">${s.researchAnswer?'已关联投研问答来源 · ':''}排序值、理由与约束取自服务端 candidateCalculation${calc?.calculation_id?` · ${esc(calc.calculation_id)}`:''}</p></div><div class="segment">${['综合排序','收益优先','流动性优先'].map(x=>tabBtn(x,'综合排序')).join('')}</div></div>${table}</div><aside class="stack"><div class="card"><div class="card-head"><h2>筛选解释</h2>${statusBadge(ids.length?'可核验':'空态',ids.length?'green':'blue')}</div><div class="attention"><span class="attention-icon">${icon('check')}</span><div><h4>候选排序不替代适当性结论</h4><p>排序、理由与约束同源于服务端 candidateCalculation；页面不给出自己的适配度分数，最终由客户经理确认。</p></div></div>${s.researchAnswer?`<div class="callout">研究依据：${esc((s.researchAnswer.sources||[]).join(' · '))}</div>`:''}<div class="divider"></div><h3>替代方向</h3><p class="muted">无完全匹配产品时，可调整金额、期限或流动性条件重新生成候选；系统不会自动替换为其他产品。</p></div></aside></div>`;
+}
+
+// ---------------------------------------------------------------------------
+// H-03：比较口径（A07「统一口径」）
+// 除了行标签，页面还必须说明「能不能排名」。排名资格只认服务端
+// candidateCalculation.comparison（generate_candidates 调 compareBasis() 产出
+// comparable / comparison_basis / incomparable_reason / missing_product_ids）。
+// 服务端没有覆盖当前比较集时，页面只按同一口径并列事实并明示「不可排名」，
+// 不陈述任何未经计算的因果关系。
+// ---------------------------------------------------------------------------
+const BASIS_LABEL={annual_rate:'annual_rate（挂牌年利率）',period_return:'period_return（区间收益率）',missing:'缺失'};
+const INCOMPARABLE_LABEL={different_basis:'产品类型 / 风险等级 / 收益口径不同',missing_values:'比较集中有产品在当前数据版本里缺值',fewer_than_two_products:'少于 2 个产品'};
+const basisText=(basis)=>{
+  if(!basis||typeof basis!=='object') return '—';
+  return `产品类型 ${basis.type||'—'} · 风险 ${basis.risk||'—'} · 收益口径 ${BASIS_LABEL[basis.benchmark]||basis.benchmark||'—'}`;
+};
+// 页面只从「服务端实际发布了哪个收益字段」来判断口径是否一致，
+// 不在浏览器换算或推导任何收益数值。
+const RETURN_FACT_KEYS=['latest_return','annual_rate'];
+function returnFactOf(product){
+  for(const key of RETURN_FACT_KEYS){
+    const value=product?.[key];
+    if(value!=null&&value!=='') return {key,value};
+  }
+  return null;
+}
+function comparisonReadout(ids){
+  const s=session();
+  const calc=s.candidateCalculation&&typeof s.candidateCalculation==='object'?s.candidateCalculation:null;
+  const server=calc?.comparison&&typeof calc.comparison==='object'?calc.comparison:null;
+  const products=ids.map(id=>productOf(id)).filter(Boolean);
+  const facts=products.map(p=>returnFactOf(p));
+  const missing=products.filter((p,i)=>!facts[i]||p.sale_status==null).map(p=>p.name||p.id);
+  const lines=[];
+  if(server){
+    const covered=Array.isArray(server.items)?server.items.length:0;
+    if(covered!==ids.length){
+      lines.push(`服务端比较口径只覆盖 ${covered} 个产品（candidateCalculation 写入时的候选集），当前比较集 ${ids.length} 个产品，因此不做排名，只并列事实。`);
+    }else if(server.comparable===true){
+      lines.push(`排名资格：服务端判定 comparable=true，全部产品口径一致（${basisText(server.comparison_basis)}）。`);
+      lines.push('区间收益与最大回撤可在同一口径下并列对照；收益与回撤之间的因果关系仍以客户约束和专业判断为准，页面不下结论。');
+    }else{
+      lines.push(`排名资格：服务端判定 comparable=false（incomparable_reason=${server.incomparable_reason||'未返回'}${INCOMPARABLE_LABEL[server.incomparable_reason]?` · ${INCOMPARABLE_LABEL[server.incomparable_reason]}`:''}），因此不可排名。`);
+      if(Array.isArray(server.missing_product_ids)&&server.missing_product_ids.length) lines.push(`缺失产品：${server.missing_product_ids.join(' / ')}（missing_values，不参与任何比较）。`);
+      lines.push('不同口径的产品只并列事实，任何一行都不构成优劣结论。');
+    }
+    lines.push(`比较口径 calculation_id：${calc.calculation_id||'—'}`);
+  }else{
+    lines.push('服务端尚未返回本比较集的比较口径（candidateCalculation.comparison，由 generate_candidates 写入），因此本页不做排名，也不给出结论性文案。');
+    // 只标注页面可复算的事实：收益口径与风险档是否一致。
+    const benchmarks=new Set(facts.filter(Boolean).map(f=>f.key));
+    const risks=new Set(products.map(p=>String(p.risk||'缺失')));
+    if(benchmarks.size>1) lines.push(`收益口径不一致：${[...benchmarks].map(k=>BASIS_LABEL[k]||k).join(' / ')}，不可直接排名。`);
+    else if(risks.size>1) lines.push(`风险档不一致：${[...risks].join(' / ')}，不同风险档产品的区间收益与回撤口径不同，不可直接排名。`);
+    else if(products.length>=2) lines.push('比较集内收益口径与风险档一致，可按同一口径逐项对照；排序资格仍以服务端比较口径为准。');
+  }
+  if(missing.length) lines.push(`无数据（不参与比较）：${missing.join(' / ')}。`);
+  const rankable=server&&server.comparable===true&&(Array.isArray(server.items)?server.items.length:0)===ids.length;
+  return {rankable,lines};
+}
+// PC 与手机共用同一比较结论，避免两页出现不同说法。
+function comparisonConclusion(ids){
+  const {rankable,lines}=comparisonReadout(ids);
+  return {rankable,badge:rankable?'可排名（服务端口径一致）':'不可排名（口径不同或服务端未覆盖）',text:lines.join('')};
 }
 
 function pageCompare(){
@@ -769,6 +872,7 @@ function pageCompare(){
   if(!cols.length){
     return pageHeading('COMPARISON','产品横向比较','比较集为空。请先在已生成的候选产品中加入 2–3 个真实产品。',btn('返回候选池','go-pc-candidates','primary'))+`<div class="card"><div class="callout warn">当前没有可比较的产品，系统不会自动补入默认候选。</div></div>`;
   }
+  const conclusion=comparisonConclusion(ids);
   const head=`<tr><th>指标</th>${cols.map(p=>`<th>${esc(p.short||p.name)}</th>`).join('')}</tr>`;
   const row=(label,key)=>`<tr><td>${label}</td>${cols.map(p=>`<td>${esc(p[key]||'—')}</td>`).join('')}</tr>`;
   const view=viewOf()||'表现';
@@ -778,15 +882,76 @@ function pageCompare(){
     流动性:[row('流动性','liquidity'),row('产品类型','type')],
     费用:[row('费用','fee'),row('适合角色','role')]
   }[view]||[];
-  return pageHeading('COMPARISON','产品横向比较','在同一时间区间、同一指标口径下比较收益、回撤、波动、费用、期限和组合角色。',btn('同步林女士比较集','sync-compare','')+btn('保存比较','save-pc-compare','primary'))+`<div class="card"><div class="between"><div class="row wrap"><span class="badge blue">${cols.length} 个产品</span><span class="muted">观察区间：近一年 · 数据时点 ${esc(s.asOf||'—')} · ${esc(goalText())}</span></div><div class="segment">${['表现','风险','流动性','费用'].map(x=>tabBtn(x,'表现')).join('')}</div></div><div class="table-wrap section-space"><table><thead>${head}</thead><tbody>${body.join('')}</tbody></table></div><div class="callout warn"><b>比较结论：</b>当前视图 ${esc(view)}。表格只列出服务端产品事实；不同口径不可直接排名，收益与回撤需要结合客户约束共同判断。业绩比较基准不代表预期收益。${s.compareSaved?' 比较结果已保存。':''}</div></div>`;
+  return pageHeading('COMPARISON','产品横向比较','在同一时间区间、同一指标口径下比较收益、回撤、波动、费用、期限和组合角色。',btn('同步林女士比较集','sync-compare','')+btn('保存比较','save-pc-compare','primary'))+`<div class="card"><div class="between"><div class="row wrap"><span class="badge blue">${cols.length} 个产品</span><span class="muted">数据时点 ${esc(s.asOf||'—')} · ${esc(goalText())}</span></div><div class="segment">${['表现','风险','流动性','费用'].map(x=>tabBtn(x,'表现')).join('')}</div></div><div class="table-wrap section-space"><table><thead>${head}</thead><tbody>${body.join('')}</tbody></table></div><div class="callout ${conclusion.rankable?'':'warn'}"><b>${esc(conclusion.badge)}：</b>${conclusion.text}<br><span class="muted">业绩比较基准不代表预期收益。${s.compareSaved?' 比较结果已保存。':''}</span></div></div>`;
 }
 
+// A20：引用必须可回指。chunk_id 在 GET /api/knowledge 的片段里带有文档标题与页码，
+// 因此每个引用都展示「标题 · 第 N 页」；查不到时如实标注，不猜测标题、不隐藏引用。
+function citationDetail(citations,evidence){
+  const ids=[...new Set([...(Array.isArray(citations)?citations:[]),...((evidence&&Array.isArray(evidence.chunk_ids))?evidence.chunk_ids:[])])].filter(x=>typeof x==='string'&&x);
+  if(!ids.length) return '';
+  const chunks=Array.isArray(session()._knowledgeChunks)?session()._knowledgeChunks:[];
+  const rows=ids.map((id)=>{
+    const hit=chunks.find(c=>c&&c.chunk_id===id)||null;
+    const title=hit&&hit.title?String(hit.title):'';
+    const page=hit&&hit.page!=null&&hit.page!==''?String(hit.page):'';
+    const doc=hit&&hit.document_id?String(hit.document_id):'';
+    const pageText=page?` · 第 ${page} 页`:'';
+    const place=hit?(title?`${title}${pageText}`:'GET /api/knowledge 未返回该片段标题'):'当前知识投影中未找到（可能来自旧知识版本）';
+    return `<div class="stat-row"><span><code>${esc(id)}</code>${doc?`<br><small class="muted">${esc(doc)}</small>`:''}</span><b>${esc(place)}</b></div>`;
+  }).join('');
+  return `<div class="list-row section-space"><h3>引用回指（chunk_id · 标题 · 页码）</h3>${rows}<p class="muted">标题与页码取自 GET /api/knowledge 的知识片段；引用只属于本次证据包。</p></div>`;
+}
+// ---------------------------------------------------------------------------
+// H-04：重复提问与超范围问题（A14b）
+// 服务端按 request_id 幂等，同一问题再次提交只会复用同一结果；页面因此必须先
+// 说清「这个问题是否已有结果」（复用 + 可见 request_id）。超范围问题在服务端
+// 以「没有返回任何引用或证据」失败收场时，页面明确拒答，而不是落到通用 ai-error。
+// ---------------------------------------------------------------------------
+const questionKey=(text)=>String(text||'').replace(/\s+/g,' ').trim();
+function repeatedResearchAnswer(question){
+  const s=session();
+  const key=questionKey(question);
+  const ans=s.researchAnswer||null;
+  if(!key||!ans) return null;
+  if(questionKey(ans.question)!==key) return null;
+  const landing=s.landing||{};
+  const fromResult=(landing.id==='ask'&&landing.query&&questionKey(landing.query)===key)?landing.requestId:null;
+  return {requestId:fromResult||null};
+}
+function researchRefusal(error){
+  if(!error||error.code==='STALE_REQUEST') return null;
+  const body=error.body||{};
+  const evidence=body.evidence||{};
+  const citations=Array.isArray(body.citations)?body.citations:[];
+  return {
+    code:String(error.code||`HTTP_${error.status||'—'}`),
+    status:error.status||null,
+    message:String(error.message||'本次请求失败'),
+    submitted:body.request_id||null,
+    citations:citations.length,
+    chunkIds:Array.isArray(evidence.chunk_ids)?evidence.chunk_ids.length:0
+  };
+}
+function researchFlowState(s,ans){
+  const repeated=repeatedResearchAnswer(s.researchAnswer?.question||ans.question);
+  // 拒答原因只取 landing 上随跳转写入的那一份（landing 是 PATCH 白名单字段），
+  // 这样离开结果页回到研究页时仍能看到本人本次的真实拒答原因；没有就什么都不显示。
+  const refusal=(s.landing&&s.landing.id==='ai-error'&&s.landing.researchRefusal)||null;
+  const repeatedBlock=repeated
+    ? `<div class="callout"><b>该问题已存在结果</b><p>「${esc(questionKey(s.researchAnswer?.question||ans.question))}」已由服务端生成回答；本次提交复用同一结果，不会生成第二条回答。</p><p class="muted">服务端 request_id <code>${esc(repeated.requestId||'不在当前结果页上（已离开结果页或来自历史会话），以下为服务端已保存的回答')}</code> · 数据时点 ${esc(s.asOfFull||'—')}</p></div>`
+    : '';
+  const refusalBlock=refusal
+    ? `<div class="card"><div class="card-head"><h2>本次问题未被回答</h2>${statusBadge(`明确拒答 · ${refusal.code}`,'red')}</div><div class="callout warn"><b>明确拒答：本次问题超出现有授权证据范围</b><p>${esc(refusal.message)}</p><p class="muted">服务端没有返回任何引用或证据，因此本次不作回答；这不是预置结论，也不代表问题已得到解决。</p></div><div class="list-row">${calcRow('错误码',refusal.code)}${calcRow('HTTP 状态',refusal.status)}${calcRow('本次 request_id',refusal.submitted||'未返回')}${calcRow('返回引用数',String(refusal.citations))}${calcRow('知识片段数',String(refusal.chunkIds))}</div><p class="muted">可以换成更聚焦的问题，或从下方推荐问题开始；系统不会用演示答案或通用失败文案替代拒答原因。</p></div>`
+    : '';
+  return repeatedBlock+refusalBlock;
+}
 function pageResearch(){
   const s=session();
   const ans=s.researchAnswer || {question:'',text:'尚未发起真实研究任务。输入问题后，系统会先检索授权知识，再调用 AI 生成。',sources:[]};
   const generated=!!s.researchAnswer;
   const fixture=(s.researchAnswer?.model||'').includes('fixture')||s.researchAnswer?.execution_mode==='fixture';
-  return pageHeading('RESEARCH DESK','智能问答与深度研究','支持问题澄清、知识库检索、复杂分析与多步骤研究；回答展示来源、数据时点和不确定事项。',btn('研究计划','research-plan','')+btn('查看候选解释','go-pc-candidates','primary'))+`<div class="grid main-aside"><div class="stack"><div class="card"><div class="card-head"><div><h2>问小财</h2><p class="muted">当前检索范围：行内知识库 · 市场数据 · 公开权威信息</p></div>${statusBadge(generated?'已生成':'待发起',generated?'blue':'orange')}</div><div class="prompt-box"><textarea id="researchPrompt" placeholder="例如：美联储降息对黄金和固收+产品可能有什么影响？">${esc(ans.question||'')}</textarea><div class="prompt-footer"><span class="muted">${icon('shield')} 复杂问题会先拆解研究步骤</span>${btn('开始研究','ask','primary')}</div></div><div class="prompt-quick"><button data-action="quick-prompt">解读今天的宏观重点</button><button data-action="quick-prompt">比较新能源和红利板块</button><button data-action="quick-prompt">阅读一份研报</button></div></div><div class="card"><div class="card-head"><h2>${generated?'本次回答':'等待 AI 生成'}</h2><span class="muted">数据时点 ${esc(s.asOfFull||'—')}</span></div>${generated?`<div class="chat-bubble"><div class="chat-name">${icon('spark')} 财富智服 · 研究回答</div><p><b>问题：</b>${esc(ans.question)}</p><p>${esc(ans.text)}</p><div class="chips">${(ans.sources||[]).map((x,i)=>`<button class="source" data-action="source-detail">[${i+1}] ${esc(x)}</button>`).join('')}</div></div><p class="muted">${fixture?'演示桩 fixture':'真实模型服务'} · 模型 ${esc(s.researchAnswer?.model||'—')} · ${esc(String(s.researchAnswer?.latency_ms??'—'))} ms</p><div class="callout warn">以下内容为研究参考，不构成投资建议。</div>`:`<div class="callout">${esc(ans.text)}</div>`}</div></div><aside class="stack"><div class="card"><div class="card-head"><h2>研究步骤</h2>${statusBadge(generated?'已完成':'待发起',generated?'green':'orange')}</div><div class="timeline"><div class="timeline-item"><span class="step-circle done">${icon('check')}</span><div class="step-copy"><b>问题理解</b><p>抽取关键词并澄清范围</p></div></div><div class="timeline-item"><span class="step-circle ${generated?'done':'current'}">${generated?icon('check'):'2'}</span><div class="step-copy"><b>证据检索</b><p>召回不少于 2 条授权资料</p></div></div><div class="timeline-item"><span class="step-circle ${generated?'done':'current'}">${generated?icon('check'):'3'}</span><div class="step-copy"><b>形成分析</b><p>事实、观点、推断分开表达</p></div></div></div></div><div class="card"><div class="card-head"><h2>研究设置</h2></div><label class="check"><input type="checkbox" data-ui-check="reviewed" ${uiOf('reviewed','1')!=='0'?'checked':''}/>只引用已审核资料</label><label class="check"><input type="checkbox" data-ui-check="uncertain" ${uiOf('uncertain','1')!=='0'?'checked':''}/>显示不确定事项</label><label class="check"><input type="checkbox" data-ui-check="public" ${uiOf('public','0')==='1'?'checked':''}/>交叉验证公开信息</label><p class="muted">当前：${uiOf('reviewed','1')!=='0'?'仅已审核资料':'含未审核草稿'} · ${uiOf('uncertain','1')!=='0'?'显示不确定事项':'隐藏不确定事项'} · ${uiOf('public','0')==='1'?'交叉验证公开信息':'不引用公开网页'}。</p></div></aside></div>`;
+  return researchFlowState(s,ans)+pageHeading('RESEARCH DESK','智能问答与深度研究','支持问题澄清、知识库检索、复杂分析与多步骤研究；回答展示来源、数据时点和不确定事项。',btn('研究计划','research-plan','')+btn('查看候选解释','go-pc-candidates','primary'))+`<div class="grid main-aside"><div class="stack"><div class="card"><div class="card-head"><div><h2>问小财</h2><p class="muted">当前检索范围：行内知识库 · 市场数据 · 公开权威信息</p></div>${statusBadge(generated?'已生成':'待发起',generated?'blue':'orange')}</div><div class="prompt-box"><textarea id="researchPrompt" placeholder="例如：美联储降息对黄金和固收+产品可能有什么影响？">${esc(ans.question||'')}</textarea><div class="prompt-footer"><span class="muted">${icon('shield')} 复杂问题会先拆解研究步骤</span>${btn('开始研究','ask','primary')}</div></div><div class="prompt-quick"><button data-action="quick-prompt">解读今天的宏观重点</button><button data-action="quick-prompt">比较新能源和红利板块</button><button data-action="quick-prompt">阅读一份研报</button></div></div><div class="card"><div class="card-head"><h2>${generated?'本次回答':'等待 AI 生成'}</h2><span class="muted">数据时点 ${esc(s.asOfFull||'—')}</span></div>${generated?`<div class="chat-bubble"><div class="chat-name">${icon('spark')} 财富智服 · 研究回答</div><p><b>问题：</b>${esc(ans.question)}</p><p>${esc(ans.text)}</p><div class="chips">${(ans.sources||[]).map((x,i)=>`<button class="source" data-action="source-detail">[${i+1}] ${esc(x)}</button>`).join('')}</div>${citationDetail(ans.sources||[],ans.evidence)}</div><p class="muted">${fixture?'演示桩 fixture':'真实模型服务'} · 模型 ${esc(s.researchAnswer?.model||'—')} · ${esc(String(s.researchAnswer?.latency_ms??'—'))} ms</p><div class="callout warn">以下内容为研究参考，不构成投资建议。</div>`:`<div class="callout">${esc(ans.text)}</div>`}</div></div><aside class="stack"><div class="card"><div class="card-head"><h2>研究步骤</h2>${statusBadge(generated?'已完成':'待发起',generated?'green':'orange')}</div><div class="timeline"><div class="timeline-item"><span class="step-circle done">${icon('check')}</span><div class="step-copy"><b>问题理解</b><p>抽取关键词并澄清范围</p></div></div><div class="timeline-item"><span class="step-circle ${generated?'done':'current'}">${generated?icon('check'):'2'}</span><div class="step-copy"><b>证据检索</b><p>召回不少于 2 条授权资料</p></div></div><div class="timeline-item"><span class="step-circle ${generated?'done':'current'}">${generated?icon('check'):'3'}</span><div class="step-copy"><b>形成分析</b><p>事实、观点、推断分开表达</p></div></div></div></div><div class="card"><div class="card-head"><h2>研究设置</h2></div><label class="check"><input type="checkbox" data-ui-check="reviewed" ${uiOf('reviewed','1')!=='0'?'checked':''}/>只引用已审核资料</label><label class="check"><input type="checkbox" data-ui-check="uncertain" ${uiOf('uncertain','1')!=='0'?'checked':''}/>显示不确定事项</label><label class="check"><input type="checkbox" data-ui-check="public" ${uiOf('public','0')==='1'?'checked':''}/>交叉验证公开信息</label><p class="muted">当前：${uiOf('reviewed','1')!=='0'?'仅已审核资料':'含未审核草稿'} · ${uiOf('uncertain','1')!=='0'?'显示不确定事项':'隐藏不确定事项'} · ${uiOf('public','0')==='1'?'交叉验证公开信息':'不引用公开网页'}。</p></div><div class="card"><div class="card-head"><h2>本次请求状态</h2>${statusBadge(s.aiStatus==='FAILED'?'失败':'可核验',s.aiStatus==='FAILED'?'red':'green')}</div>${calcRow('researchAnswer','PATCH 白名单字段，来自 /api/ai/generate')}${calcRow('request_id','结果页展示最近一次服务端 request_id')}${calcRow('本次拒答','经 landing 字段带入，不改冻结集合')}</div></aside></div>`;
 }
 
 function researchPage(type){
@@ -904,10 +1069,16 @@ function landingSpec(id){
     'templates':{title:'写作模板',kicker:'智能写作',summary:'模板管理已由应用服务写入真实活动记录；模板库当前没有服务端来源，本页不展示演示模板。',facts:[['记录','record_activity · activities[]'],['处理','未写入模板']],next:['新建写作任务'],nextActions:[['new-writing','新建写作任务','primary'],['back-from','返回','light']]},
     'review-writing':{title:'章节审阅',kicker:'质量控制',summary:'章节审阅已由应用服务写入真实活动记录；质控计数没有服务端来源，本页不提交真实发布。',facts:[['记录','record_activity · activities[]'],['处理','未提交发布']],next:['返回写作台'],nextActions:[['back-from','返回','primary']]},
     'workspace':{title:'我的研究空间',kicker:'投研工作台',summary:'研究空间已由应用服务写入真实活动记录；个人工作区条目从服务端活动记录恢复。',facts:[['记录','record_activity · activities[]'],['权限',s.role||'投顾 / 财富管理']],next:['打开智能问答'],nextActions:[['go-research','打开研究台','primary'],['back-from','返回','light']]},
-    'research-plan':{title:'研究计划',kicker:'智能问答',summary:'研究计划已由应用服务写入真实活动记录；拆解步骤以服务端返回为准，本页不展示预置步数。',facts:[['记录','record_activity · activities[]'],['检索范围','行内知识库 · 市场数据'],['状态',s.researchAnswer?'已完成':'待发起']],next:['开始研究'],nextActions:[['ask','开始研究','primary'],['back-from','返回','light']]},
+    // H-01：研究计划只是一条 record_activity 记录，服务端没有「已拆解 N 步」字段，
+    // 因此不再展示固定步数；真实记录（activity_id / created_at / data_version）由结果页读取 activities[]。
+    'research-plan':{title:'研究计划',kicker:'智能问答',summary:'研究计划已由应用服务写入活动记录；本次请求本身没有拆解步骤的数据来源，拆解步骤以智能问答的实际回答为准。',facts:[['记录','record_activity · activities[]'],['检索范围','行内知识库 · 市场数据'],['状态',s.researchAnswer?'已有研究回答':'尚未发起研究']],next:['开始研究'],nextActions:[['ask','开始研究','primary'],['back-from','返回','light']]},
     'filter-panel':{title:'筛选条件',kicker:'列表过滤',summary:'筛选操作已由应用服务写入真实活动记录；筛选本身在会话内生效，不改动服务端列表。',facts:[['记录','record_activity · activities[]'],['当前页',s.landing?.from||route()]],next:['返回列表'],nextActions:[['back-from','返回','primary']]},
     'auth-needed':{title:'需要授权',kicker:'资产配置',summary:'生成方案前需要勾选使用持仓和风险测评信息。',facts:[['用途','配置分析'],['范围','持仓 · 风险测评'],['提示','可随时取消']],next:['返回配置'],nextActions:[['back-from','返回配置页','primary']]},
-    'rule-confirmation':{title:'需要确认配置条件',kicker:'RULE MATCH',summary:`规则匹配结果为 ${s.ruleMatch?.status||'NEED_CONFIRMATION'}，程序没有执行或覆盖旧方案。请补充缺失字段后重试。`,facts:[['规则',s.ruleMatch?.rule_id||'暂无'],['版本',s.ruleMatch?.rule_version||'暂无'],['缺失字段',(s.ruleMatch?.missing_fields||[]).join(' · ')||'需人工确认']],next:['返回配置'],nextActions:[['back-from','返回配置页','primary']]},
+    'rule-confirmation':{title:'需要确认配置条件',kicker:'RULE MATCH',summary:'规则匹配结果为 NEED_CONFIRMATION：本次缺少判定所需的输入字段，程序没有执行规则，也没有覆盖旧方案。请补充下方「缺失字段」后重新生成。',facts:[['规则',s.ruleMatch?.rule_id||'暂无'],['版本',s.ruleMatch?.rule_version||'暂无'],['缺失字段',(s.ruleMatch?.missing_fields||[]).join(' · ')||'需人工确认'],['处理','未执行规则，未覆盖旧方案']],next:['返回配置'],nextActions:[['back-from','返回配置页','primary']]},
+    // H-06 / §8.1 #8：UNSUPPORTED_RULE 与 NEED_CONFIRMATION 语义不同，不得共用
+    // 「需要确认配置条件」页。规则不匹配时程序不执行规则、不产生新方案（服务端 patch 为 {}），
+    // 页面据此只说明「未匹配」，不提示补充字段。
+    'rule-unsupported':{title:'没有匹配的配置规则',kicker:'RULE MATCH',summary:'规则匹配结果为 UNSUPPORTED_RULE：当前目标与规则目录中的条件不匹配，程序没有执行任何规则，也没有生成或覆盖配置方案。请调整风险等级、投资期限或流动性需求后重新生成。',facts:[['规则匹配结果','UNSUPPORTED_RULE'],['规则',s.ruleMatch?.rule_id||'未选择规则'],['版本',s.ruleMatch?.rule_version||'暂无'],['当前目标',goalText()],['处理','未执行规则，未覆盖旧方案']],next:['返回配置'],nextActions:[['back-from','返回配置页','primary']]},
     'prompt-needed':{title:'请先输入问题',kicker:'问小财',summary:'用大白话描述你的理财问题后，系统会调用 AI 生成并返回证据与风险提示。',facts:[['示例','最近的市场变化会影响我的组合吗？'],['范围','已授权资料']],next:['返回助手'],nextActions:[['back-from','返回','primary']]},
     'ai-error':{title:'AI 生成失败',kicker:'AI ERROR',summary:s.promptError||'生成或 Embedding 服务未就绪，系统没有使用预置答案推进流程。请检查会话状态、证据范围或生成服务配置。',facts:[['状态',s.aiStatus||'FAILED'],['请求',s.lastQuestion||s.landing?.query||'当前任务'],['处理','未写入成功结果']],next:['返回上一页'],nextActions:[['back-from','返回','primary']]},
     'action-error':{title:'操作未完成',kicker:'REQUEST ERROR',summary:s.promptError||'应用服务未确认本次操作，页面没有展示成功结果。',facts:[['处理','未展示成功结果'],['建议','检查服务状态后重试']],next:['返回上一页'],nextActions:[['back-from','返回','primary']]},
@@ -938,7 +1109,7 @@ function landingBody(){
   // through to not-implemented inside landingSpec().
   const specId=NOT_IMPLEMENTED_LANDINGS.includes(L.id)?'not-implemented':L.id;
   const spec=landingSpec(specId);
-  const facts=(spec.facts||[]).map(x=>`<div class="stat-row"><span>${x[0]}</span><b>${x[1]}</b></div>`).join('');
+  const facts=(spec.facts||[]).map(x=>`<div class="stat-row"><span>${x[0]}</span><b>${Array.isArray(x[1])?esc(x[1].join(' · ')):x[1]}</b></div>`).join('');
   const actions=(spec.nextActions||[['back-from','返回','primary']]).map(a=>btn(a[1],a[0],a[2])).join('');
   const syncText=window.WealthApi?.connected?'共享会话已同步':'共享会话未连接';
   const activityList=session().activities||[];
@@ -967,11 +1138,21 @@ function mobileStage(r, title, inner){return `<div class="mobile-stage"><aside c
 function mobileAssistant(){
   const s=session();
   const answer=s.lastAnswer;
+  // H-05：多轮追问不串档。lastAnswer / lastQuestion 是冻结契约里的单槽（同为 1 个 PATCH 字段），
+  // 本页按「本次回答所属的问题」只渲染这一轮：上一轮追问不会被当成新问题的答案，
+  // 输入框也不会把上一轮问题填回成新问题的草稿。历史轮次条数只读 aiRequests（服务端 request_id 列表）。
+  const currentQuestion=String(s.lastQuestion||'').trim();
+  const roundCount=Array.isArray(s.aiRequests)?s.aiRequests.length:0;
   const bubble=answer
-    ? `<div class="chat-bubble"><div class="chat-name">${icon('spark')} 财富智服</div><p>${esc(s.lastQuestion||'')}</p><p>${esc(answer.text)}</p><div class="chips">${(answer.sources||[]).map(x=>`<button class="source" data-action="source-detail">${esc(x)}</button>`).join('')}</div></div><div class="callout warn">以上为信息辅助，不构成投资建议或交易指令。</div>`
+    ? `<div class="chat-bubble"><div class="chat-name">${icon('spark')} 财富智服</div><p>${esc(currentQuestion||'（本轮问题未记录）')}</p><p>${esc(answer.text)}</p><div class="chips">${(answer.sources||[]).map(x=>`<button class="source" data-action="source-detail">${esc(x)}</button>`).join('')}</div>${String(answer.model||'').includes('fixture')?'<p class="muted">演示桩 fixture</p>':''}</div><div class="callout warn">以上为信息辅助，不构成投资建议或交易指令。</div>`
     : `<div class="chat-bubble"><div class="chat-name">${icon('spark')} 财富智服</div>你可以直接问我：最近的市场变化会影响我的组合吗？</div>`;
-  const alerts=(s.activities||[]).length;
-  return `<div class="mobile-welcome"><span class="badge blue">${icon('spark')} AI 理财助手</span><h1>你好，${esc(s.customerName||'客户')}</h1><p>我会把复杂的市场和产品讲清楚，也会标出需要你确认的地方。</p></div><div class="mobile-highlight"><div class="dim">数据时点 · ${esc(s.asOfFull||'—')}</div><div class="metric-value">${alerts?`${alerts} 条服务端活动`:'当前无持仓提醒'}</div><p class="dim">提醒条数来自服务端活动记录；没有记录时不展示演示条数。</p><button class="btn" data-action="m-holding">查看我的持仓</button></div><div class="mobile-feature-grid"><a class="mobile-feature" href="#m/fund">${icon('chart')}诊基</a><a class="mobile-feature" href="#m/allocation">${icon('sliders')}做配置</a><a class="mobile-feature" href="#m/candidates">${icon('filter')}找产品</a></div><div class="card" style="margin-top:15px"><div class="card-head"><h2>问小财</h2>${statusBadge(answer?'已回答':'已连接',answer?'blue':'green')}</div>${bubble}<div class="prompt-quick"><button data-action="m-quick">为什么今天基金涨跌不一？</button><button data-action="m-quick">帮我看一下我的组合</button></div><div class="chat-compose"><input id="mobilePrompt" placeholder="用大白话问理财问题" value="${esc(s.lastQuestion||'')}"/><button class="btn primary" data-action="m-send">${icon('send')}</button></div></div>${answer?`<div class="path-next">${btn('去看持仓诊断','m-holding','primary full')}</div>`:''}<p class="mobile-footer-note">回答由演示桩 fixture 生成，会展示数据时点、来源和不确定事项，不构成投资建议。</p>`;
+  // H-05：删除硬编码「2 条持仓提醒」。提醒条数只取服务端 activities[]，没有记录就明说没有。
+  const activities=(s.activities||[]);
+  const alerts=activities.length;
+  const reminderLine=alerts
+    ? `<div class="metric-value">${alerts} 条服务端活动</div><p class="dim">来自服务端 activities[]，最近一条 ${esc(String(activities.at(-1)?.created_at||'—'))}</p>`
+    : `<div class="metric-value">暂无持仓提醒</div><p class="dim">服务端没有写入提醒记录；本页不展示演示提醒条数。</p>`;
+  return `<div class="mobile-welcome"><span class="badge blue">${icon('spark')} AI 理财助手</span><h1>你好，${esc(s.customerName||'客户')}</h1><p>我会把复杂的市场和产品讲清楚，也会标出需要你确认的地方。</p></div><div class="mobile-highlight"><div class="dim">数据时点 · ${esc(s.asOfFull||'—')}</div>${reminderLine}<button class="btn" data-action="m-holding">查看我的持仓</button></div><div class="mobile-feature-grid"><a class="mobile-feature" href="#m/fund">${icon('chart')}诊基</a><a class="mobile-feature" href="#m/allocation">${icon('sliders')}做配置</a><a class="mobile-feature" href="#m/candidates">${icon('filter')}找产品</a></div><div class="card" style="margin-top:15px"><div class="card-head"><h2>问小财</h2>${statusBadge(answer?'已回答':'已连接',answer?'blue':'green')}</div>${bubble}<div class="prompt-quick"><button data-action="m-quick">为什么今天基金涨跌不一？</button><button data-action="m-quick">帮我看一下我的组合</button></div><div class="chat-compose"><input id="mobilePrompt" placeholder="用大白话问理财问题" value=""/><button class="btn primary" data-action="m-send">${icon('send')}</button></div><p class="muted">追问会覆盖上一轮回答（服务端助手状态只有一个 lastAnswer 槽位），不会把旧回答当成新问题的答案；累计 ${roundCount} 次服务端请求${roundCount?'（aiRequests）':''}。</p></div>${answer?`<div class="path-next">${btn('去看持仓诊断','m-holding','primary full')}</div>`:''}<p class="mobile-footer-note">回答由演示桩 fixture 生成，会展示数据时点、来源和不确定事项，不构成投资建议。</p>`;
 }
 function fundCard(item, saved){
   return `<div class="mobile-product"><div class="between"><div><span class="badge ${item.badge||''}">${esc(item.tag)}</span><h3>${esc(item.name)}</h3></div><div class="rate">${esc(item.ret)}<small>近一年</small></div></div><div class="product-meta">${esc(item.meta)}</div><div class="between"><span class="muted">${esc(item.note)}</span>${item.action==='diagnose'?btn(saved?'查看诊断':'深度诊基','m-diagnose','small primary',item.product):`<button class="btn small" data-action="m-product-detail" data-product="${esc(item.product)}">查看详情</button>`}</div></div>`;
@@ -1041,7 +1222,13 @@ function mobileAllocation(){
   const planCard=plan
     ? `<div class="card"><div class="card-head"><h2>已生成方案</h2>${statusBadge('可回看','green')}</div><div class="grid four"><div class="mini-stat"><span class="muted">现金管理</span><h3>${plan.cash}%</h3></div><div class="mini-stat"><span class="muted">固收</span><h3>${plan.bond}%</h3></div><div class="mini-stat"><span class="muted">权益</span><h3>${plan.equity}%</h3></div><div class="mini-stat"><span class="muted">保障</span><h3>${plan.protection}%</h3></div></div><p class="muted">目标：${esc(goalText())}</p>${btn('查看候选推荐','go-candidates','primary full')}</div>`
     : `<div class="card"><div class="card-head"><h2>配置逻辑</h2>${statusBadge('待输入完成','orange')}</div><p class="muted">系统会说明现金、固收、权益和保障在组合中的作用，并显示关键假设与风险提示。</p></div>`;
-  return `<div class="eyebrow">ASSET ALLOCATION</div><h1>做一份资产配置</h1><p class="sub">先说清楚目标和约束，方案才有意义。</p>${s.authNotice?`<div class="callout ${s.authorized?'good':'warn'}">${esc(s.authNotice)}</div>`:''}<div class="card"><div class="card-head"><h2>${plan?'2 / 3 方案已生成':'1 / 3 客户目标'}</h2>${statusBadge(plan?'已保存':'约 1 分钟',plan?'green':'blue')}</div><div class="form-grid"><label>投资金额<input id="allocAmount" value="${esc(g.amount||'¥500,000')}"/></label><label>投资期限<select id="allocTerm">${termOpts}</select></label><label>风险等级<select id="allocRisk">${riskOpts}</select></label><label>资金用途<select id="allocPurpose">${purposeOpts}</select></label></div><label class="section-space">多久可能需要用到这笔钱？<select id="allocLiquidity">${liqOpts}</select></label><label class="check section-space"><input id="allocAuth" type="checkbox"${s.authorized!==false?' checked':''}/>我已授权使用持仓和风险测评信息</label>${btn(plan?'重新生成方案':'生成配置方案','m-generate-allocation','primary full')}</div>${planCard}`;
+  // A04：撤销授权入口。复用现有 set_authorization 命令（不新增命令、不改冻结集合）。
+  // 反向勾选检查框与点击「撤销授权」都走同一条 set_authorization 路径；下游状态
+  //（方案 / 候选 / 比较 / 陪伴 / 活动记录）由服务端 downstreamReset() 级联清空，页面只读服务端结果。
+  const authBox=s.authorized===false
+    ? `<div class="callout warn"><b>当前未授权使用持仓和风险测评信息</b><p>生成方案、生成候选、保存比较与投后陪伴命令都会被服务端拒绝（INSUFFICIENT_EVIDENCE）。重新勾选授权后可以继续。</p></div>`
+    : `<div class="between"><span class="muted">可随时撤销；撤销后服务端会清空方案、候选、比较与陪伴状态。</span>${btn('撤销授权','m-revoke-auth','light')}</div>`;
+  return `<div class="eyebrow">ASSET ALLOCATION</div><h1>做一份资产配置</h1><p class="sub">先说清楚目标和约束，方案才有意义。</p>${s.authNotice?`<div class="callout ${s.authorized?'good':'warn'}">${esc(s.authNotice)}</div>`:''}<div class="card"><div class="card-head"><h2>${plan?'2 / 3 方案已生成':'1 / 3 客户目标'}</h2>${statusBadge(plan?'已保存':'约 1 分钟',plan?'green':'blue')}</div><div class="form-grid"><label>投资金额<input id="allocAmount" value="${esc(g.amount||'¥500,000')}"/></label><label>投资期限<select id="allocTerm">${termOpts}</select></label><label>风险等级<select id="allocRisk">${riskOpts}</select></label><label>资金用途<select id="allocPurpose">${purposeOpts}</select></label></div><label class="section-space">多久可能需要用到这笔钱？<select id="allocLiquidity">${liqOpts}</select></label><label class="check section-space"><input id="allocAuth" type="checkbox"${s.authorized!==false?' checked':''}/>我已授权使用持仓和风险测评信息</label>${btn(plan?'重新生成方案':'生成配置方案','m-generate-allocation','primary full')}<div class="divider"></div>${authBox}</div>${planCard}`;
 }
 // P-15: 持有收益 / 收益贡献 / 集中度 only come from the read-only portfolio
 // calculation endpoint. Two denominators are shown side by side and are never
@@ -1167,7 +1354,10 @@ function mobileCompare(){
     流动性:[row('流动性','liquidity'),row('产品类型','type')],
     费用:[row('费用','fee'),row('组合角色','role')]
   }[view]||[];
-  return `<div class="eyebrow">COMPARE</div><h1>产品比较</h1><p class="sub">用相同的时间和指标口径，看清差异。当前 ${cols.length} 个产品。</p><div class="mobile-tags">${['表现','风险','流动性','费用'].map(x=>tabBtn(x,'表现')).join('')}</div><div class="card"><div class="table-wrap"><table><thead>${head}</thead><tbody>${rows.join('')}</tbody></table></div><div class="callout warn">当前视图：${esc(view)}。表格只列出服务端产品事实，不同口径不可直接排名；历史收益不能替代风险判断。业绩比较基准不代表预期收益。${s.compareSaved?' 比较结果已保存。':''}</div>${btn('保存比较结果','m-save-compare','primary full')}</div><div class="path-next">${btn('进入投后陪伴','go-companion','primary full')}</div>`;
+  // H-03：删除「历史收益更高的产品，回撤和波动通常也更高」这类未经计算的固定结论；
+  // 结论只来自 comparisonReadout()：服务端 comparable / incomparable_reason 决定能不能排名。
+  const conclusion=comparisonConclusion(ids);
+  return `<div class="eyebrow">COMPARE</div><h1>产品比较</h1><p class="sub">用相同的时间和指标口径，看清差异。当前 ${cols.length} 个产品。</p><div class="mobile-tags">${['表现','风险','流动性','费用'].map(x=>tabBtn(x,'表现')).join('')}</div><div class="card"><div class="table-wrap"><table><thead>${head}</thead><tbody>${rows.join('')}</tbody></table></div><div class="callout ${conclusion.rankable?'':'warn'}"><b>${esc(conclusion.badge)}：</b>${conclusion.text}<br><span class="muted">业绩比较基准不代表预期收益。${s.compareSaved?' 比较结果已保存。':''}</span></div>${btn('保存比较结果','m-save-compare','primary full')}</div><div class="path-next">${btn('进入投后陪伴','go-companion','primary full')}</div>`;
 }
 function mobileCompanion(){
   const s=session();
@@ -1340,8 +1530,11 @@ async function runRealAiTask(taskType, input, onSuccess, landingId='ask', contex
     });
   }catch(error){
     if(!isCurrent()||error?.code==='STALE_REQUEST') return;
-    patch({aiStatus:'FAILED',promptError:error?.message||'AI 生成失败'});
-    openLanding('ai-error',{query:input.question||input.prompt||input.topic||''});
+    patch({aiStatus:'FAILED', promptError:error?.message||'AI 生成失败'});
+    // 拒答原因只随 landing 一起写入（landing 是 PATCH 白名单字段）：跳转到结果页后，
+    // 研究页仍能读到本次失败的真实原因，而不是只能看到通用 ai-error。
+    // 不新增会话状态 key——冻结的 36 key 契约不变。
+    openLanding('ai-error',{query:input.question||input.prompt||input.topic||'',researchRefusal:researchRefusal(error)});
   }
 }
 
