@@ -83,6 +83,165 @@ Content-Type: application/json
 
 **契约冻结判定**：`tests/unit/session-contract.test.js` 锁定 19 个 PATCH 字段、7 个命令、36 个状态 key、11 个 `downstreamReset` key，以及服务端权威字段不可经 PATCH 写入。改动这些集合必须同步改本表，视为契约变更，需走 PR 与 `ci-merge-gate`。
 
+## 只读计算与派生投影（W1 波次 3）
+
+本节登记两类**不改变会话状态**的接口：① 由服务端确定性计算 service 暴露的只读计算端点；② 由只读事实派生的页面投影字段。二者共同的不变式：
+
+- **只读**：`GET`/`POST` 计算调用不写会话、不推进 `version`、不需要也不接受 `expected_version` / `request_id`；
+- **不新增命令**：命令集合恒为 7 个（`set_authorization`、`generate_allocation`、`generate_candidates`、`save_comparison`、`submit_care`、`create_reminder`、`record_activity`）；
+- **不新增状态 key**：`defaultSessionState()` 仍为 36 个 key，派生投影不进会话状态；
+- **不改冻结集合**：19 个 PATCH 白名单字段、11 个 `downstreamReset` key 均不变；
+- **不构成契约变更**：因此 `tests/unit/session-contract.test.js` 的 36 / 19 / 7 / 11 断言保持原样，本节落地时不需要修改该测试。
+
+**路径以 contract PR 描述为准**：下列端点与查询参数的具体拼写由波次 3 `contract` Worker 的 PR 描述与实现决定；本文以「以 contract PR 描述为准」记录其语义、参数含义、单位口径与响应字段，避免与实现漂移。
+
+### 1. 存款本息只读计算（P-04）
+
+对应实现：`BusinessRulesService.calculateDeposit()`（`src/components/business-rules/application/businessRulesService.js`），底层执行规则目录 `deposit-interest-simple`（A23 精确匹配 `rule_id` + `rule_version`），HTTP 路径以 contract PR 描述为准。
+
+**请求**
+
+| 查询参数 | 必填 | 说明 |
+|---|---|---|
+| `principal` | 是 | 本金，单位「元」，正数 |
+| `annual_rate` | 是 | 年利率，按 `rate_unit` 解释（见下） |
+| `years` | 是 | 期限，单位「年」，正数 |
+| `rate_unit` | 否 | `decimal`（默认，规则目录口径）或 `percent`；`percent` 在服务端换算为小数后再计算 |
+| `rule_version` | 否 | 缺省为规则目录当前版本（`rules-demo-v1`）；给出时必须与服务端规则目录精确匹配 |
+| `session_id` | 否 | 该端点不读会话事实，携带与否均不影响结果 |
+
+**利率单位口径（务必区分）**
+
+- `rate_unit=decimal`：**2.15% 必须传 `0.0215`**。这是规则目录 `deposit-interest-simple` 的原生口径（`principal × annual_rate × years`）。
+- `rate_unit=percent`：可传 `2.15`，服务端先 `÷100` 再计算；响应回显 `rate_unit` 与换算后的 `inputs`。
+- 省略 `rate_unit` 时按 `decimal` 解释。**把百分数直接以默认口径传入会放大 100 倍**（`{principal:500000, annual_rate:2.15, years:3}` 曾算出利息 `3,225,000`），服务端因此加单位守卫，超出小数上限的 `annual_rate` 直接拒绝，不静默产出错误本息。
+
+**成功响应（200）**
+
+```json
+{
+  "status": "MATCHED",
+  "rule_id": "deposit-interest-simple",
+  "rule_version": "rules-demo-v1",
+  "calculation_id": "calc-…",
+  "rate_unit": "decimal",
+  "inputs": { "principal": 500000, "annual_rate": 0.0215, "years": 3 },
+  "result": {
+    "interest": 32250,
+    "maturity_amount": 532250,
+    "formula": "本金 500000.00 元 × 年利率 2.15% × 3 年 = 利息 32250.00 元"
+  },
+  "api_version": "v1"
+}
+```
+
+- `calculation_id` 每次计算的服务端标识；`result` 恒含 `interest`、`maturity_amount`、`formula`；金额单位 CNY、展示 2 位小数。
+- 利率真值来源唯一：`products.annual_rate`（当前存款产品 `deposit` = 2.15%）；页面不得再自算或套用固定 2.15%。
+- 响应不写入会话，不产生 `activities`，不触发 `downstreamReset()`。
+
+**错误**
+
+| 状态码 | `error.code` | 触发 |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | `principal ≤ 0`、`years ≤ 0`、非有限数、`rate_unit` 非法，或利率单位误用（百分数以小数口径传入） |
+| 404 | `NOT_FOUND` | 规则 `deposit-interest-simple` 或其指定 `rule_version` 在规则目录中不存在（`calculateDeposit()` 返回 `status: "UNSUPPORTED_RULE"`，由 contract 层映射为 404；**不返回 422**） |
+
+- `calculateDeposit()` 在规则被停用时返回 `status: "UNSUPPORTED_RULE"`，同样按上表 **404** 返回，不静默降级为默认规则或默认利率；
+- 与 `generate_allocation` 的 `422 UNSUPPORTED_RULE`（会话命令的规则不匹配）不同，本只读端点的规则缺失属「资源不存在」，故为 404。
+
+**空态**：该期限无挂牌利率时返回错误（`VALIDATION_ERROR`，`fields` 指明期限），页面显示「该期限暂无挂牌利率」，**不得**回退到默认 2.15%。
+
+### 2. 持仓计算只读投影（P-15）
+
+对应实现：`PortfolioService.calculate()`（`src/components/demo-data/application/portfolioService.js`）与 AI 证据路径共享同一 `computePortfolio()`，因此同一组持仓的 `calculation_id` 在两条路径上一致。HTTP 路径以 contract PR 描述为准。
+
+**请求**
+
+| 参数 | 必填 | 说明 |
+|---|---|---|
+| `session_id` | 是 | 授权、持仓与 `data_as_of` 均从该会话服务端事实取得；浏览器不得提交持有人、持仓或金额 |
+| 其余参数 | — | 不接受任何客户事实覆盖字段 |
+
+**授权前置**：与 `GET /api/demo-data` 同一规则——会话 `authorized=false` 时返回 `available=false`、`unavailable_reason="unauthorized"`，持仓明细为空，不回显任何客户明细。
+
+**成功响应（200，`available=true`）**
+
+```json
+{
+  "available": true,
+  "calculation_id": "calc-…",
+  "calculation_version": "…",
+  "currency": "CNY",
+  "data_as_of": "…",
+  "total_amount": 718420,
+  "weights": [{ "product_id": "fund", "weight": 0.4176 }],
+  "max_concentration": 0.4176,
+  "max_concentration_basis": "all_assets",
+  "positions": [],
+  "equity": {
+    "available": true,
+    "amount": "…",
+    "share_of_total": "…",
+    "max_concentration": "…",
+    "max_concentration_basis": "equity_assets"
+  },
+  "holding_return": {
+    "available": true,
+    "basis": "amount_x_rate_over_1_plus_rate",
+    "level": "estimated",
+    "amount": "…",
+    "rate": "…"
+  },
+  "api_version": "v1"
+}
+```
+
+**分母口径（不可混用）**
+
+- `max_concentration`（顶层）恒为 `basis=all_assets`：分母 = 全部持仓市值；按当前持仓为 **41.76%**。保险保费不在 `holdings` 内，**不进入任何金额合计**。
+- `equity.max_concentration` 恒为 `basis=equity_assets`：分母 = 权益类持仓市值（产品 `type='基金'` 或 `role` 含「权益」）；无权益持仓时 `equity.available=false`。
+- 页面文案「单只宽基基金占权益资产 68%」属 `equity_assets` 口径，只能读 `equity.max_concentration`，不得用顶层数值替代；反之亦然。两侧都带 `basis` 字段，前端展示文案必须同时显示分母说明。
+
+**金额与收益口径**：金额单位 CNY、2 位小数；`holding_return` 的 `level="estimated"`（现无成本基准与现金分红，`收益金额 = 现值 × return_rate / (1 + return_rate)`），页面必须标明「估算」，不得呈现为核验值，也不得回填历史上硬编码的 `+42,860.18 / 5.40%`。
+
+**空态与不可用**
+
+| 条件 | 响应 | 页面 |
+|---|---|---|
+| 未授权 | `available=false`、`unavailable_reason="unauthorized"` | 展示未授权提示，不展示金额 |
+| 无持仓 | `available=false`、`unavailable_reason="no_holdings"`、`total_amount=null` | 展示「暂无持仓」，**不得**显示 0 元或声称已诊断 |
+
+**错误**：参数非法 → `400 VALIDATION_ERROR`；会话不存在或过期 → `404 NOT_FOUND`（复用 `NotFoundError`）；数据源不可用 → `503 DEPENDENCY_UNAVAILABLE`（`DependencyUnavailableError`）。三类均不写入会话。未授权**不**报错而是返回 `available=false`，以免把「无权限」误显示成系统错误。
+
+### 3. 合格投资者认定状态（P-05，只读派生投影）
+
+- **性质**：只读派生投影，由服务端在读取会话/客户快照时派生并随读返回；**浏览器不可写**，也不进入 `defaultSessionState()` 的 36 个 key，因此不新增状态 key、不改 19/7/11 集合。
+- **数据来源**：客户快照与 `products` 事实（`products.type = 'private'` 的受限产品是否可售），不新增写入方；`qualifiedStatus` 与 `authorized` 语义不同——前者是「合格投资者认定」，后者是「本次会话的客户授权」，二者不可互相替代。
+- **取值**：`recognized`（已认定）/ `not_recognized`（未认定）/ `unknown`（无派生来源时明确置为未知，不用默认值补齐）。
+- **投影字段**（命名以 contract PR 描述为准）：`qualifiedStatus`、`restrictedProducts`（已认定时可见的受限产品事实，`product_id`、名称、`risk_level`、`sale_status`、`data_id`）、`restrictedUnavailableReason`。
+- **浏览器行为**：认定状态与受限产品只能读；未认定时不得返回任何受限产品细节（不返回部分内容），页面显示受限说明。加入比较、诊断等写入仍走既有 PATCH 白名单或 7 个命令，**不因本投影新增写入通道**。
+- **空态**：无受限产品 → `restrictedProducts=[]` 且 `restrictedUnavailableReason="no_restricted_products"`，页面显示「当前无受限产品」，不展示 `PE6` 占位。
+
+### 4. 保单 / 保障缺口（P-13，只读派生投影）
+
+- **性质**：只读派生投影，从 `products` 产品事实（含 `insurance`）与会话客户快照派生；**无保单写入方**，不进入 36 个 key、不新增命令、不改 19/7/11 集合。
+- **浏览器不可写**：保单、覆盖度、缺口、待办均为服务端派生，前端不得自行拼接或缓存为「真实保单」。
+- **投影原则（防伪造）**：只输出可由产品事实确定的字段——`product_id`、产品名、`insurer`（若产品事实提供）、`coverage_type`、`coverage_amount`、`annual_premium`、`sale_status`、`data_id`、`data_as_of`。**绝不伪造**保单号、投保日期、生效日期、理赔进度、已核保结论等产品事实之外的东西；数据不足即置空并给 `unavailable_reason`。
+- **无数据空态**：无授权保单或无保单数据源 → `policies=[]`、`coverage_gap=null`、`unavailable_reason="no_policy_source"`（或 `unauthorized`），页面显示「未授权或暂无可展示保单」，保持 W1 既有「保险不替代核保与理赔」标注。
+- **验收边界**：即便投影为空，页面也不得回退到硬编码的覆盖度 72%、保障缺口或「安享长期医疗 ¥4,000,000」固定弹窗。
+
+### 5. 与冻结集合的关系（不变式小结）
+
+| 冻结集合 | 波次 3 是否改动 | 依据 |
+|---|---|---|
+| 36 个状态 key | **不改** | 派生投影不进 `defaultSessionState()`；认定/保单/计算均不入会话 |
+| 19 个 PATCH 白名单字段 | **不改** | 本节全部端点不写会话 |
+| 7 个会话命令 | **不改** | 只读计算不注册命令 |
+| 11 个 `downstreamReset` key | **不改** | 无写入即无失效级联 |
+| 14 类 `record_activity` kind | **不改** | 本节不写 `activities` |
+
+凡将来需要把上述任一派生值落成会话状态（例如把认定状态或草稿写入会话），仍按 `docs/w1-pending-features.md` §8 流程先取得状态契约 owner 批准，并在同一 PR 内同时改本表与 `tests/unit/session-contract.test.js`。
+
 ## AI 任务（真实模型 / fixture 桩）
 ```http
 POST /api/ai/generate
