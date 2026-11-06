@@ -97,3 +97,10 @@ body.is-mobile{background:#f5f7fc}
 .stat-row{grid-template-columns:1fr;gap:2px}
 .stat-row>b{text-align:left}
 }
+
+/* Wave 4 - sale-status chip tones (P-03 / P-14). The chip reflects only the
+   server sale_status; a missing value never gets the green/sellable tone. */
+.chip.good{border-color:#bfe3d2;background:#e7f5ee;color:var(--green)}
+.chip.warn{border-color:#f3dcb4;background:#fff3df;color:var(--amber)}
+.chip.muted{border-color:var(--line);background:#f6f8fb;color:var(--muted)}
+.mobile-product .muted{color:var(--muted)}
