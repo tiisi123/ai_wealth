@@ -1,4 +1,5 @@
 // W1 action domain: flow. Only this file may be edited by its owner.
+// W1 AO canary ownership drill (stage 1): comment-only change inside frontend-flow scope.
 // Branches are kept verbatim; dispatch preserves their original order.
 
 // P-12：产品事实的服务端权威来源（products[] 与 holdings[] 同源自 GET /api/demo-data）。
