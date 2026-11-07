@@ -507,7 +507,7 @@ const productMeta = (id) => ((sessionApi()?.HOLDING_BY_PRODUCT||{})[id] || null)
 // value the service did not return is shown as 未提供 / 空态 instead of a default.
 // ---------------------------------------------------------------------------
 const PRODUCT_CATALOG = { status: 'idle', promise: null, body: null, error: '' };
-const PRODUCT_CATALOG_ROUTES = new Set(['pc/product-fund','pc/product-insurance','pc/product-wealth','m/wealth','pc/supply','pc/library']);
+const PRODUCT_CATALOG_ROUTES = new Set(['pc/product-fund','pc/product-insurance','pc/product-wealth','pc/product-deposit','m/wealth','pc/supply','pc/library']);
 // Only the live session map (replaced in place by session-sync.js from
 // /api/demo-data) is read here; the pre-sync DemoSession seed is not server data.
 function serverProductRows(type){
@@ -698,7 +698,10 @@ function productPage(type){
     const f=intervalPick(p);
     return `<button type="button" class="catalog-item ${p.id===current.id?'active':''}" data-action="pick-ui" data-ui-key="productId" data-ui-value="${esc(p.id)}"><b>${esc(p.name)}</b><small>${esc(p.type||'')}${f?` · ${esc(f.available?f.value:'该区间暂无数据')}`:''}</small></button>`;
   }).join('');
-  const intervalMetric=intervalFact.available&&hasInterval
+  // P-02/P-04: intervalFact is null whenever the panel has no interval
+  // dimension (存款 / 保险). The null case must render the panel's own
+  // 未提供 metric slot, never dereference the absent interval fact.
+  const intervalMetric=intervalFact?.available&&hasInterval
     ? ['近一年收益率',intervalFact.value]
     : [hasInterval?`${interval}收益率`:'区间收益',hasInterval?'该区间暂无数据':'未提供'];
   const metrics=type==='fund'
