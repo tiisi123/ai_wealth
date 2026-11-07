@@ -11,10 +11,10 @@ import { openRoute } from './helpers.js';
 // 只使用这些接口已经会返回的字段；数值是受控响应夹具，不代表真实模型输出或验收结论。
 
 const APP = '#app';
-// P-04 三态断言只保留当前 main 确实成立的 m/deposit：pc/product-deposit 在当前 main 上
-// 目录读取完成后不会自动重渲染，且 productPage('deposit') 渲染时会因 intervalFact 为 null
-// 读取 .available 抛错（属前端既有缺陷，不在本次范围、不改生产代码迎合测试）。
-const DEPOSIT_PAGES = ['m/deposit'];
+// P-04 覆盖手机存款页与 PC 存款洞察页：两页共用同一 depositCard 渲染与同一接口，
+// 三态断言对每个页面逐页验证。PC 页由 stacked 前端 PR #26 补上目录读取后的重渲染
+// 与区间事实空值守卫后才可用，本 PR 只恢复断言范围，不改生产代码。
+const DEPOSIT_PAGES = ['m/deposit', 'pc/product-deposit'];
 
 // 历史版本写死在页面上的固定指标；任何状态下都不允许再出现。
 const HARDCODED_INDICATORS = ['99.98%', '18,426', '94.6%'];
@@ -187,7 +187,7 @@ test.describe('P-01 能力总览（pc/architecture）：GET /api/health 成功�
   });
 });
 
-test.describe('P-04 存款本息（m/deposit）：GET /api/calculations/deposit 三态', () => {
+test.describe('P-04 存款本息（m/deposit 与 pc/product-deposit）：GET /api/calculations/deposit 三态', () => {
   test('成功：本息与 calculation_id 来自服务端结果，不出现浏览器固定金额', async ({ page }) => {
     const matched = depositMatched();
     await page.route(DEPOSIT_ROUTE, (route) => route.fulfill(json(matched)));
