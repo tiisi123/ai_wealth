@@ -1085,10 +1085,85 @@ function pageResearch(){
   return researchFlowState(s,ans)+pageHeading('RESEARCH DESK','智能问答与深度研究','支持问题澄清、知识库检索、复杂分析与多步骤研究；回答展示来源、数据时点和不确定事项。',btn('研究计划','research-plan','')+btn('查看候选解释','go-pc-candidates','primary'))+`<div class="grid main-aside"><div class="stack"><div class="card"><div class="card-head"><div><h2>问小财</h2><p class="muted">当前检索范围：行内知识库 · 市场数据 · 公开权威信息</p></div>${statusBadge(generated?'已生成':'待发起',generated?'blue':'orange')}</div><div class="prompt-box"><textarea id="researchPrompt" placeholder="例如：美联储降息对黄金和固收+产品可能有什么影响？">${esc(ans.question||'')}</textarea><div class="prompt-footer"><span class="muted">${icon('shield')} 复杂问题会先拆解研究步骤</span>${btn('开始研究','ask','primary')}</div></div><div class="prompt-quick"><button data-action="quick-prompt">解读今天的宏观重点</button><button data-action="quick-prompt">比较新能源和红利板块</button><button data-action="quick-prompt">阅读一份研报</button></div></div><div class="card"><div class="card-head"><h2>${generated?'本次回答':'等待 AI 生成'}</h2><span class="muted">数据时点 ${esc(s.asOfFull||'—')}</span></div>${generated?`<div class="chat-bubble"><div class="chat-name">${icon('spark')} 财富智服 · 研究回答</div><p><b>问题：</b>${esc(ans.question)}</p><p>${esc(ans.text)}</p><div class="chips">${(ans.sources||[]).map((x,i)=>`<button class="source" data-action="source-detail">[${i+1}] ${esc(x)}</button>`).join('')}</div>${citationDetail(ans.sources||[],ans.evidence)}</div><p class="muted">${fixture?'演示桩 fixture':'真实模型服务'} · 模型 ${esc(s.researchAnswer?.model||'—')} · ${esc(String(s.researchAnswer?.latency_ms??'—'))} ms</p><div class="callout warn">以下内容为研究参考，不构成投资建议。</div>`:`<div class="callout">${esc(ans.text)}</div>`}</div></div><aside class="stack"><div class="card"><div class="card-head"><h2>研究步骤</h2>${statusBadge(generated?'已完成':'待发起',generated?'green':'orange')}</div><div class="timeline"><div class="timeline-item"><span class="step-circle done">${icon('check')}</span><div class="step-copy"><b>问题理解</b><p>抽取关键词并澄清范围</p></div></div><div class="timeline-item"><span class="step-circle ${generated?'done':'current'}">${generated?icon('check'):'2'}</span><div class="step-copy"><b>证据检索</b><p>召回不少于 2 条授权资料</p></div></div><div class="timeline-item"><span class="step-circle ${generated?'done':'current'}">${generated?icon('check'):'3'}</span><div class="step-copy"><b>形成分析</b><p>事实、观点、推断分开表达</p></div></div></div></div><div class="card"><div class="card-head"><h2>研究设置</h2></div><label class="check"><input type="checkbox" data-ui-check="reviewed" ${uiOf('reviewed','1')!=='0'?'checked':''}/>只引用已审核资料</label><label class="check"><input type="checkbox" data-ui-check="uncertain" ${uiOf('uncertain','1')!=='0'?'checked':''}/>显示不确定事项</label><label class="check"><input type="checkbox" data-ui-check="public" ${uiOf('public','0')==='1'?'checked':''}/>交叉验证公开信息</label><p class="muted">当前：${uiOf('reviewed','1')!=='0'?'仅已审核资料':'含未审核草稿'} · ${uiOf('uncertain','1')!=='0'?'显示不确定事项':'隐藏不确定事项'} · ${uiOf('public','0')==='1'?'交叉验证公开信息':'不引用公开网页'}。</p></div><div class="card"><div class="card-head"><h2>本次请求状态</h2>${statusBadge(s.aiStatus==='FAILED'?'失败':'可核验',s.aiStatus==='FAILED'?'red':'green')}</div>${calcRow('researchAnswer','PATCH 白名单字段，来自 /api/ai/generate')}${calcRow('request_id','结果页展示最近一次服务端 request_id')}${calcRow('本次拒答','经 landing 字段带入，不改冻结集合')}</div></aside></div>`;
 }
 
+// P-07 (F-12): pc/events、pc/macro、pc/industry 三页消费 GET /api/knowledge，
+// 让三种真实状态可达：成功（专属片段 + 标题/页码/来源/时点）、显式空态
+// （无专属片段）、接口失败（真实 HTTP 状态 + error.code + error.message，
+// 绝不把失败伪装成空态或成功）。页面自行发起并持有读取，复用
+// ensureServiceHealth / ensureProductCatalog 的模式：初始化失败不会跳结果页，
+// 因此每个来源页必须自己渲染真实状态的失败块。
+const RESEARCH_KNOWLEDGE_ROUTES=new Set(['pc/events','pc/macro','pc/industry']);
+const RESEARCH_KNOWLEDGE={state:'idle',promise:null,meta:null,chunks:[],httpStatus:null,errorCode:'',errorMessage:'',error:''};
+function ensureResearchKnowledge(){
+  if(RESEARCH_KNOWLEDGE.state==='pending') return RESEARCH_KNOWLEDGE.promise;
+  if(RESEARCH_KNOWLEDGE.state==='ok'||RESEARCH_KNOWLEDGE.state==='error') return RESEARCH_KNOWLEDGE.promise;
+  RESEARCH_KNOWLEDGE.state='pending';
+  RESEARCH_KNOWLEDGE.promise=(async()=>{
+    try{
+      const response=await fetch('/api/knowledge',{headers:{accept:'application/json'}});
+      const body=await response.json().catch(()=>null);
+      if(!response.ok||!body){
+        RESEARCH_KNOWLEDGE.state='error';
+        RESEARCH_KNOWLEDGE.meta=null;
+        RESEARCH_KNOWLEDGE.chunks=[];
+        RESEARCH_KNOWLEDGE.httpStatus=response.status;
+        RESEARCH_KNOWLEDGE.errorCode=body?.error?.code||'';
+        RESEARCH_KNOWLEDGE.errorMessage=body?.error?.message||'';
+        RESEARCH_KNOWLEDGE.error=`GET /api/knowledge → HTTP ${response.status}${body?.error?.code?` ${body.error.code}`:''}${body?.error?.message?`：${body.error.message}`:''}`;
+      }else{
+        RESEARCH_KNOWLEDGE.state='ok';
+        RESEARCH_KNOWLEDGE.meta=body.status||null;
+        RESEARCH_KNOWLEDGE.chunks=Array.isArray(body.chunks)?body.chunks:[];
+        RESEARCH_KNOWLEDGE.httpStatus=null;
+        RESEARCH_KNOWLEDGE.errorCode='';
+        RESEARCH_KNOWLEDGE.errorMessage='';
+        RESEARCH_KNOWLEDGE.error='';
+      }
+    }catch(error){
+      RESEARCH_KNOWLEDGE.state='error';
+      RESEARCH_KNOWLEDGE.meta=null;
+      RESEARCH_KNOWLEDGE.chunks=[];
+      RESEARCH_KNOWLEDGE.httpStatus=null;
+      RESEARCH_KNOWLEDGE.errorCode=error?.code||'';
+      RESEARCH_KNOWLEDGE.errorMessage=error?.message||'网络错误';
+      RESEARCH_KNOWLEDGE.error=`GET /api/knowledge 请求失败：${error?.message||'网络错误'}`;
+    }
+    if(RESEARCH_KNOWLEDGE_ROUTES.has(route())) render();
+    return RESEARCH_KNOWLEDGE;
+  })();
+  return RESEARCH_KNOWLEDGE.promise;
+}
+// 知识片段没有 category 字段：专属片段以其服务端元数据（title / chunk_id /
+// document_id / source_id）是否标注该类型或中文标签来判定；只展示服务端
+// 真实返回的片段，不伪造任何内容。
+const RESEARCH_TYPE_MATCH={events:['events','市场事件'],macro:['macro','宏观指标','宏观'],industry:['industry','行业研报','行业']};
+function researchChunksFor(type){
+  const keys=RESEARCH_TYPE_MATCH[type]||[type];
+  return (RESEARCH_KNOWLEDGE.chunks||[]).filter((c)=>{
+    const text=[c.title,c.chunk_id,c.document_id,c.source_id].filter(Boolean).join(' ').toLowerCase();
+    return keys.some((k)=>text.includes(String(k).toLowerCase()));
+  });
+}
 function researchPage(type){
   const data={events:['EVENT RADAR','市场事件解读','聚合跨行业、跨市场资讯，区分事实、机构观点和模型推断。'],macro:['MACRO DESK','宏观分析','观察增长、通胀、就业、货币、财政与房地产指标，并关联资产影响。'],industry:['INDUSTRY VIEW','行业解读','汇总行情、估值、景气度、政策事件和机构观点，生成可验证的行业视图。']}[type];
   const view=viewOf()||'今日';
-  return pageHeading(data[0],data[1],data[2],btn('订阅提醒','subscribe','')+btn('生成简报','brief','primary'))+`<div class="grid main-aside"><div class="stack"><div class="card"><div class="card-head"><div><h2>${type==='events'?'重点事件':type==='macro'?'宏观指标看板':'行业研究视图'} · ${esc(view)}</h2><p class="muted">切换时间窗会重新取数</p></div><div class="segment">${['今日','本周','自定义'].map(x=>tabBtn(x,'今日')).join('')}</div></div><div class="callout warn"><b>暂无可引用材料</b><p>shared 知识库当前没有 ${type} 专属片段，应用服务也没有为「${esc(view)}」返回指标序列。系统不会补入默认观点或演示数值，可在智能问答中针对具体问题检索。</p></div>${btn('去智能问答提问','go-research','primary')}</div></div><aside class="stack"><div class="card"><div class="card-head"><h2>研究口径</h2>${statusBadge('透明','green')}</div><label>数据范围<select data-ui-change="scope"><option${uiOf('scope','行内授权 + 公开信息')==='行内授权 + 公开信息'?' selected':''}>行内授权 + 公开信息</option><option${uiOf('scope')==='仅行内授权'?' selected':''}>仅行内授权</option></select></label><label class="section-space">输出粒度<select data-ui-change="grain"><option${uiOf('grain','一页纸')==='一页纸'?' selected':''}>一页纸</option><option${uiOf('grain')==='深度报告'?' selected':''}>深度报告</option></select></label><label class="check section-space"><input type="checkbox" data-ui-check="infer" ${uiOf('infer','1')!=='0'?'checked':''}/>标出模型推断</label><p class="muted">当前口径：${esc(uiOf('scope','行内授权 + 公开信息'))} · ${esc(uiOf('grain','一页纸'))} · ${uiOf('infer','1')!=='0'?'已标出推断':'不展示推断'}。</p></div><div class="card"><div class="card-head"><h2>宏观日历</h2>${statusBadge('未提供','blue')}</div><div class="callout">应用服务没有提供日历数据，本页不展示演示日程。</div></div></aside></div>`;
+  ensureResearchKnowledge();
+  const state=RESEARCH_KNOWLEDGE.state;
+  let body;
+  if(state==='error'){
+    body=`<div class="callout warn"><b>知识数据加载失败</b><p>GET /api/knowledge 未返回成功响应，本页不展示任何片段、观点或演示数值，也不会把接口失败伪装成空态。</p><div class="list-row"><h3>服务端真实错误</h3><p class="muted">HTTP 状态：<code>${esc(String(RESEARCH_KNOWLEDGE.httpStatus??'—'))}</code></p><p class="muted">error.code：<code>${esc(RESEARCH_KNOWLEDGE.errorCode||'未提供')}</code></p><p class="muted">error.message：<code>${esc(RESEARCH_KNOWLEDGE.errorMessage||'未提供')}</code></p></div><p class="muted">${esc(RESEARCH_KNOWLEDGE.error||'')}</p></div>`;
+  }else if(state!=='ok'){
+    body=`<div class="callout"><b>读取中</b><p>正在读取 GET /api/knowledge，确认是否有 ${esc(type)} 专属片段…</p></div>`;
+  }else{
+    const chunks=researchChunksFor(type);
+    const version=RESEARCH_KNOWLEDGE.meta?.knowledge_version||'—';
+    if(!chunks.length){
+      body=`<div class="callout warn"><b>暂无可引用材料</b><p>shared 知识库当前没有 ${type} 专属片段，应用服务也没有为「${esc(view)}」返回指标序列。系统不会补入默认观点或演示数值，可在智能问答中针对具体问题检索。</p></div>${btn('去智能问答提问','go-research','primary')}`;
+    }else{
+      const chunkRow=(c)=>`<div class="list-row"><h3>${esc(c.title||c.chunk_id||'未命名片段')}</h3><p class="muted">第 ${esc(String(c.page??'未提供'))} 页 · 来源 ${esc(c.source_id||'未提供')} · 时点 ${esc(literalTime(c.source_timestamp)||'未提供')}</p><p class="muted">片段 ${esc(c.chunk_id||'未提供')} · 文档 ${esc(c.document_id||'未提供')} · 知识版本 ${esc(c.knowledge_version||version)}</p></div>`;
+      body=`<div class="list-row"><h3>共 ${chunks.length} 个 ${esc(type)} 专属片段</h3><p class="muted">标题、页码、来源与时点均取自 GET /api/knowledge · 知识版本 ${esc(version)}。</p></div>${chunks.map(chunkRow).join('')}<p class="muted">系统不会补入默认观点或演示数值；以上仅为服务端返回的真实知识片段。</p>${btn('去智能问答提问','go-research','primary')}`;
+    }
+  }
+  return pageHeading(data[0],data[1],data[2],btn('订阅提醒','subscribe','')+btn('生成简报','brief','primary'))+`<div class="grid main-aside"><div class="stack"><div class="card"><div class="card-head"><div><h2>${type==='events'?'重点事件':type==='macro'?'宏观指标看板':'行业研究视图'} · ${esc(view)}</h2><p class="muted">切换时间窗会重新取数</p></div><div class="segment">${['今日','本周','自定义'].map(x=>tabBtn(x,'今日')).join('')}</div></div>${body}</div></div><aside class="stack"><div class="card"><div class="card-head"><h2>研究口径</h2>${statusBadge('透明','green')}</div><label>数据范围<select data-ui-change="scope"><option${uiOf('scope','行内授权 + 公开信息')==='行内授权 + 公开信息'?' selected':''}>行内授权 + 公开信息</option><option${uiOf('scope')==='仅行内授权'?' selected':''}>仅行内授权</option></select></label><label class="section-space">输出粒度<select data-ui-change="grain"><option${uiOf('grain','一页纸')==='一页纸'?' selected':''}>一页纸</option><option${uiOf('grain')==='深度报告'?' selected':''}>深度报告</option></select></label><label class="check section-space"><input type="checkbox" data-ui-check="infer" ${uiOf('infer','1')!=='0'?'checked':''}/>标出模型推断</label><p class="muted">当前口径：${esc(uiOf('scope','行内授权 + 公开信息'))} · ${esc(uiOf('grain','一页纸'))} · ${uiOf('infer','1')!=='0'?'已标出推断':'不展示推断'}。</p></div><div class="card"><div class="card-head"><h2>宏观日历</h2>${statusBadge('未提供','blue')}</div><div class="callout">应用服务没有提供日历数据，本页不展示演示日程。</div></div></aside></div>`;
 }
 
 // P-06: 供给目录的行与计数只来自共享应用服务。服务端没有「已审核供给」表，
