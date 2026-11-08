@@ -2,7 +2,8 @@
 // Branches are kept verbatim; dispatch preserves their original order.
 window.WealthActions.registerDomain(["ask","brief","extract","filter-panel","generate-candidates","mobile-search","new-research","new-supply","new-writing","onepager","quick-prompt","research-plan","review-writing","save","save-pc-compare","source-detail","subscribe","summary","sync-compare","task-center","templates","upload","workspace"], function actionsResearch(action, el, productId, e){
   if(action==='ask'){
-    const q=($('#workspacePrompt')?.value||$('#researchPrompt')?.value||'').trim()||'美联储降息对黄金和固收+产品可能有什么影响？';
+    const q=($('#workspacePrompt')?.value||$('#researchPrompt')?.value||'').trim();
+    if(!q){ openLanding('prompt-needed'); return; }
     void runRealAiTask('research_qa',{question:q},(result)=>{
       patch({researchAnswer:{question:q,text:result.text,sources:result.citations||[],source_ids:result.source_ids||[],evidence:result.evidence,model:result.model,latency_ms:result.latency_ms},researchUsedInCandidates:true,lastQuestion:q,aiRequests:[...(session().aiRequests||[]),result.request_id]});
     });
