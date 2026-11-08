@@ -67,7 +67,7 @@ Content-Type: application/json
 
 ## 共享会话状态契约（W1 冻结，2026-11-05）
 
-`defaultSessionState()` 的 36 个 key 按写入途径分三类。本节表格与 `tests/unit/session-contract.test.js` 的期望集合互为锁定：**任何白名单、命令、状态形状或清理规则的变更，必须在同一原子 PR 内同时改代码、本表与冻结集合测试**。原子契约变更（C-01 / C-02）不能拆成 stacked 中间态（删 PATCH 字段的那一提交会让冻结断言立即变红），而应由 `contract` 作为作者、通过 `OWNERSHIP` 的 `owners` 数组把 `contract` 精确加入少数契约文件的共同 owner，使实现 + 本表 + 测试 + 必要的前端切换点落在**一个 PR** 内；不得扩整个 `docs/` / `tests/` 前缀、不得改 `public/app.js` 的 ownership、不得用 label 或 `baseline` 绕过。具体文件清单与登记方案见 `docs/w1-pending-features.md` §14.6；该共同 owner 登记本身需要一个前置 `ci` PR。
+`defaultSessionState()` 的 36 个 key 按写入途径分三类。本节表格与 `tests/unit/session-contract.test.js` 的期望集合互为锁定：**任何白名单、命令、状态形状或清理规则的变更，必须在同一原子 PR 内同时改代码、本表与冻结集合测试**。原子契约变更（C-01 / C-02）不能拆成 stacked 中间态（删 PATCH 字段的那一提交会让冻结断言立即变红），落地形态是**每项变更一个原子 PR**（作者 `contract`），只使用 `#28` 已登记的 3 条精确共同 owner（本文件、`tests/unit/session-contract.test.js`、`tests/unit/activities.test.js`）；**不新增/扩大 owner**，不扩目录、不加 `public/app.js`、不用 label 或 `baseline` 绕过。`tests/unit/frozen-set-regression.test.js` 的 owner 缺口见 `docs/w1-pending-features.md` §14.6.7 / §16-H；DB 集成与前端切换按 §14.6 的后续步骤。
 
 | 类别 | 字段 | 写入途径 | 校验 | 撤权清理 | 刷新恢复 |
 |---|---|---|---|---|---|
@@ -81,7 +81,7 @@ Content-Type: application/json
 
 **生命周期**：会话落 `app_sessions`，`status='ACTIVE'`，`expires_at = NOW() + INTERVAL '12 hours'`；浏览器只保存 `session_id`（localStorage `wealth-demo-session-id`），业务状态全部由服务端会话提供，刷新后按 `session_id` 恢复；版本过期返回 `409 VERSION_CONFLICT`，同一 `request_id` 重放返回首次结果且不推进状态。
 
-**契约冻结判定**：`tests/unit/session-contract.test.js` 与 `tests/unit/frozen-set-regression.test.js` 共同锁定 19 个 PATCH 字段、7 个命令、36 个状态 key、11 个 `downstreamReset` key，以及服务端权威字段不可经 PATCH 写入。改动这些集合必须同步改本表与两份冻结测试，视为契约变更，需走 PR 与 `ci-merge-gate`；**「同步」的落地形态是单原子 PR + 精确共同 owner（见上）**。
+**契约冻结判定**：`tests/unit/session-contract.test.js` 与 `tests/unit/frozen-set-regression.test.js` 共同锁定 19 个 PATCH 字段、7 个命令、36 个状态 key、11 个 `downstreamReset` key，以及服务端权威字段不可经 PATCH 写入。改动这些集合必须同步改本表与冻结测试，视为契约变更，需走 PR 与 `ci-merge-gate`；**「同步」的落地形态是单原子 PR**：`session-contract.test.js` 已由 #28 与 `contract` 共同 owner，可在同一 PR 更新；`frozen-set-regression.test.js` 尚未登记共同 owner，其缺口见 §16-H，**在缺口解决前不得宣称原子 PR 已可全绿**。
 
 > **待实现变更预告**：下文「已批准的状态契约变更（C-01 / C-02）」已获用户批准，但**截至 `e4d8f49` 尚未实现**；实现前，本节 36 / 19 / 7 / 11 的现行语义仍是唯一有效的服务端行为，页面不得提前按新契约写入。
 
@@ -242,11 +242,11 @@ Content-Type: application/json
 | 11 个 `downstreamReset` key | **不改** | 无写入即无失效级联 |
 | 14 类 `record_activity` kind | **不改** | 本节不写 `activities` |
 
-凡将来需要把上述任一派生值落成会话状态（例如把认定状态或草稿写入会话），仍按 `docs/w1-pending-features.md` §8 流程先取得状态契约 owner 批准，并由同一原子 PR 同时改本表、实现与两份冻结测试（`session-contract.test.js`、`frozen-set-regression.test.js`）。
+凡将来需要把上述任一派生值落成会话状态（例如把认定状态或草稿写入会话），仍按 `docs/w1-pending-features.md` §8 流程先取得状态契约 owner 批准，并由同一原子 PR 同时改本表、实现与 `session-contract.test.js`（`activities.test.js` 按需）；`frozen-set-regression.test.js` 的 owner 缺口见 §16-H。
 
 ## 已批准的状态契约变更（C-01 / C-02，待实现）
 
-> **状态**：2026-11-06 用户批准；截至 `e4d8f49` **尚未实现**。本节描述的是**目标契约**，不是当前服务端行为。落地形态为**每项变更一个原子 PR**（作者 `contract`）：实现 + 本文件 + `session-contract.test.js` + `frozen-set-regression.test.js` + 必要的 `tests/integration/w1-flow.test.js` + C-01 的 `public/actions/flow.js` 切换点在同一 PR 内；跨 owner 通过 `OWNERSHIP.owners` 精确登记解决，**不拆 stacked 中间态**。前置 `ci` PR 与完整文件清单见 `docs/w1-pending-features.md` §14.6。在实现合并前，任何页面/客户端不得按本节写入，服务端仍按上文「W1 冻结」的 36 / 19 / 7 / 11 行为校验。
+> **状态**：2026-11-06 用户批准；截至 `e4d8f49` **尚未实现**。本节描述的是**目标契约**，不是当前服务端行为。落地形态为**每项变更一个原子 PR**（作者 `contract`）：实现 + 本文件 + `tests/unit/session-contract.test.js` + `tests/unit/activities.test.js` 在同一 PR 内（后两者为 #28 已登记的共同 owner）；**不新增/扩大 owner**。`tests/unit/frozen-set-regression.test.js` 的 owner 缺口见 §16-H；`tests/integration/w1-flow.test.js` 与 C-01 的 `public/actions/flow.js` 切换按 §14.6.6/§14.6.8 的后续步骤，不塞进原子 PR。在实现合并前，任何页面/客户端不得按本节写入，服务端仍按上文「W1 冻结」的 36 / 19 / 7 / 11 行为校验。
 
 ### C-01 `contactTodo` 迁移到 `record_activity(kind="contact-request")`
 
@@ -263,7 +263,7 @@ Content-Type: application/json
   ```
   服务端生成 `activity_id` / `created_at` / `data_version` 并追加 `state.activities[]`（上限仍 50）；同一 `request_id` 重放返回首次结果，不重复追加。
 - `contactTodo` 保留为**只读兼容字段**：仍在 `defaultSessionState()` 的 36 个 key 中，但读时派生 `contactTodo = activities.some(a => a.kind === "contact-request")`；客户端不可写，旧会话的存量值以派生值为准。
-- **授权前置**：`kind="contact-request"` 计划豁免 `assertAuthorized()`（客户侧服务请求，不读取持仓/KYC 明细）；豁免仅限该 kind。**该豁免待 §16-A 最终确认**，确认前实现方不得自行放宽其他命令。
+- **授权前置（已批准）**：**仅 `kind="contact-request"` 豁免 `assertAuthorized()`**（客户侧服务请求，不读取持仓/KYC 明细）；其他 `record_activity` kind 与其他会话命令的授权前置不变。实现必须在命令入口按 `command` + `kind` 精确分支，不得把豁免放在整个 `record_activity` 或所有命令上。
 - **撤权清理**：`activities` 已在 `downstreamReset()` 内，撤权即清空；派生 `contactTodo` 随之为 `false`。不新增 reset key。
 - **`submit_care` 副作用**：现行 `submit_care` 在 patch 中写 `contactTodo: true`，C-01 落地时**必须删除该写入**；其权威状态是 `careSubmitted`。否则读时派生会覆盖存量值，造成写入/读取不一致，并把「提交陪伴建议」误显示为「已联系客户经理」。若产品要求两者等价，应由服务端追加 `contact-request` activity，不得恢复 PATCH 写入（另立确认）。
 - 命令集合不变：**7 → 7**。
@@ -283,9 +283,10 @@ Content-Type: application/json
     "input": { "content": "草稿正文，1–20000 字符", "source_request_id": "uuid", "title": "可选，≤200 字符" }
   }
   ```
-- 校验：`source_request_id` 必须存在于本会话的 `ai_requests`（按 `session_id + request_id` 查表，**不读浏览器 PATCH 的 `aiRequests` 数组**）；`content` 1–20000 字符；每会话最多 20 条；`request_id` 幂等；`expected_version` 过期 → `409`；未授权 → `422 INSUFFICIENT_EVIDENCE`（W1 口径，待 §16-B 确认）。
+- 校验：`source_request_id` 必须存在于本会话的 `ai_requests`（按 `session_id + request_id` 查表，**不读浏览器 PATCH 的 `aiRequests` 数组**）；`content` 1–20000 字符；每会话最多 20 条；`request_id` 幂等；`expected_version` 过期 → `409`。
+- **授权前置（已批准）**：`save_draft` 要求 `authorized=true`（会话与客户快照同时为真），否则 `422 INSUFFICIENT_EVIDENCE`；与其他业务命令一致，不提供未授权旁路。
 - 成功响应：`{ session, result: { status: "APPLIED", draft_id, created_at, data_version }, api_version }`。
-- **撤权清理**：`set_authorization(authorized=false)` 的撤权分支显式 `writingDrafts: []`（与 `diagnosis` / `lastAnswer` / `researchAnswer` 同处）；**不加入 `downstreamReset()`**，因此 `downstreamReset` 仍为 **11**，且目标变更/重新生成方案不会误清草稿。该安全语义的完整分析见 `docs/w1-pending-features.md` §14.4。
+- **撤权清理（已批准）**：`set_authorization(authorized=false)` 的撤权分支显式 `writingDrafts: []`（与 `diagnosis` / `lastAnswer` / `researchAnswer` 同处）；**不加入 `downstreamReset()`**，因此 `downstreamReset` 仍为 **11**。**仅撤权清空；目标变更与重新生成方案均保留草稿**。该安全语义的完整分析见 `docs/w1-pending-features.md` §14.4。
 
 ### 变更后的集合对照
 
