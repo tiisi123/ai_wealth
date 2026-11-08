@@ -1074,6 +1074,8 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 | 真实业务数据验收达标 | **0 / 30** | 受控契约响应只证明 UI 与服务端契约的映射，不构成真实数据验收 |
 
 > 核对：4（成功独立）+ 26（零三态）= 30；26 = 11（主链路）+ 15（从未打开）。逐行以 §15.2 的「当前覆盖」列为准。
+>
+> **未合并 E2E 实证（不改变本表计数）**：`#32`（OPEN，`pc/research`）与 `#34`（OPEN，`pc/events` / `pc/macro` / `pc/industry`）分别实证 F-13 与 F-12。它们尚未合并，故上表仍按 main 计数不变；#34 的 12 条 S/F 断言保持红，修复前不得用受控落点或静态空态替代真实链路覆盖。详见 §15.2 与 §15.3。
 
 ### 15.2 逐路由矩阵
 
@@ -1089,10 +1091,10 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 | 8 | `pc/candidates` | S：仅主链路（生成后状态检查）；F：无；E：无 | S：候选行 + `reasons[]`/`constraints`/`holding_months`；F：`generate_candidates` 409/422 → `action-error` 真实错误；E：无候选 → 引导空态（去配置页） | 命令 `generate_candidates`；`candidateCalculation`；`POST /api/ai/generate`（`candidate_explain`） | F-08b：无独立可复算 `score`；F/E 断言待补 | `test-e2e` + `test-unit`（候选计算） | 否 |
 | 9 | `pc/compare` | S：仅主链路（保存）；F：无；E：无 | S：表格 + `comparable`/`incomparable_reason`/`comparison_basis`；F：`save_comparison` 400/409 → 真实错误；E：比较集为空 → 引导空态 | 命令 `save_comparison`；`PATCH compareSet`；`GET /api/demo-data` | 无（#24 已消费口径）；F/E 断言待补 | `test-e2e` + `test-unit`（2–3 个边界） | 否 |
 | 10 | `pc/supply` | S：无；F：无；E：无 | S：产品行作为供给单元，带 `product:<id>`/来源/时点/可售；F：快照失败 →「供给目录加载失败」；E：资讯/策略/行业无来源 →「当前分类暂无已审核供给」 | `GET /api/demo-data`；`record_activity`（`new-supply`） | 无生产缺陷 | `test-e2e` | **是**（资讯/策略/行业观点供给） |
-| 11 | `pc/research` | S：仅主链路；F：无；E：无 | S：`researchAnswer` + 引用（标题+页码）+ 时延/模型；F：422/503 → `ai-error` 或超范围拒答；E：空问题 → `prompt-needed` | `POST /api/ai/generate`（`research_qa`） | 无（#24 已补提示/拒答）；F/E 断言待补 | `test-e2e` + `test-unit`（引用白名单） | 否 |
-| 12 | `pc/events` | S：无；F：无；E：无 | S：有事件片段时按知识片段渲染并标时点；F：`GET /api/knowledge` 失败 → 真实错误；E：无事件片段 →「暂无可引用材料」 | `GET /api/knowledge`；`research_qa`（`events` 片段缺失） | 无（空态为真实结果） | `test-e2e` | **是**（事件源/片段） |
-| 13 | `pc/macro` | S：无；F：无；E：无 | S：有宏观指标时渲染指标+时点；F：知识/数据接口失败；E：无指标序列 → 空态 | `GET /api/knowledge`；`research_qa` | 无（当前无指标来源，空态正确） | `test-e2e` | **是**（宏观 8 指标序列） |
-| 14 | `pc/industry` | S：无；F：无；E：无 | S：有行业片段时渲染；F：接口失败；E：无片段 → 空态 | `GET /api/knowledge`；`research_qa` | 无 | `test-e2e` | **是**（行业数据/研报） |
+| 11 | `pc/research` | S：仅主链路；F：无；E：无（#32 受控 `prompt-needed` 落点断言，OPEN 未合并，**不能视为真实链路覆盖**） | S：`researchAnswer` + 引用（标题+页码）+ 时延/模型；F：422/503 → `ai-error` 或超范围拒答；E：空问题 → `prompt-needed` | `POST /api/ai/generate`（`research_qa`） | **F-13（#32 实证）**：`ask` 空输入回退默认问题，真实空输入 → `prompt-needed` 不可达；由 `frontend-research` 续修（尚无合并 PR），真实 E/F 断言待补 | `test-e2e` + `test-unit`（引用白名单） | 否 |
+| 12 | `pc/events` | S：无（#34 受控 2xx 断言红，OPEN 未合并）；F：无（#34 受控 503 断言红，OPEN 未合并）；E：真实空态成立（#34 6 绿，OPEN 未合并） | S：有事件片段时按知识片段渲染并标时点；F：`GET /api/knowledge` 失败 → 真实错误；E：无事件片段 →「暂无可引用材料」 | `GET /api/knowledge`；`research_qa`（`events` 片段缺失） | **F-12（#34 实证）**：`researchPage(type)` 无条件静态、不读 `GET /api/knowledge` 也不发起该请求；S 片段渲染与 F 接口失败均不可达；需 `frontend-lead` 修复；E 真实空态已成立 | `test-e2e` | **是**（事件源/片段） |
+| 13 | `pc/macro` | S：无（#34 受控 2xx 断言红，OPEN 未合并）；F：无（#34 受控 503 断言红，OPEN 未合并）；E：真实空态成立（#34 6 绿，OPEN 未合并） | S：有宏观指标时渲染指标+时点；F：知识/数据接口失败；E：无指标序列 → 空态 | `GET /api/knowledge`；`research_qa` | **F-12（#34 实证，同一 `researchPage` 缺陷）**：页面不读知识投影、不发起知识请求；S/F 不可达；需 `frontend-lead` 修复；E 真实空态已成立 | `test-e2e` | **是**（宏观 8 指标序列） |
+| 14 | `pc/industry` | S：无（#34 受控 2xx 断言红，OPEN 未合并）；F：无（#34 受控 503 断言红，OPEN 未合并）；E：真实空态成立（#34 6 绿，OPEN 未合并） | S：有行业片段时渲染；F：接口失败；E：无片段 → 空态 | `GET /api/knowledge`；`research_qa` | **F-12（#34 实证，同一 `researchPage` 缺陷）**：页面不读知识投影、不发起知识请求；S/F 不可达；需 `frontend-lead` 修复；E 真实空态已成立 | `test-e2e` | **是**（行业数据/研报） |
 | 15 | `pc/library` | S：无；F：无；E：无 | S：产品卡片 + `knowledge_version` + 片段数；F：`/api/demo-data` 或 `/api/knowledge` 失败 →「共享数据加载失败」；E：无知识版本 →「暂无已发布产品知识」 | `GET /api/demo-data`；`GET /api/knowledge` | 无生产缺陷 | `test-e2e` | **部分**（观点资产/审核状态） |
 | 16 | `pc/reader` | S：无；F：无；E：无 | S：文档/片段 `title`+`page`+`source_id`，摘要带 `document_id`；F：422/400 → 真实错误；E：无 ACTIVE 知识 →「暂无已发布报告」 | `GET /api/knowledge`；`POST /api/ai/generate`（`report_summary`） | 无生产缺陷（#24 已补页码） | `test-e2e` + `test-unit`（缺 `document_id` 拒绝） | 否（扫描件 OCR 后置） |
 | 17 | `pc/writing` | S：无；F：无；E：无 | S：草稿保存后显示服务端 `draft_id`/时间/来源请求，刷新可回看；F：`save_draft` 400/409/422 → 真实错误；E：无草稿 →「暂无已保存草稿」 | 命令 `save_draft`（C-02，待实现）；`writing_draft` | F-06：草稿不持久（C-02 未落地） | `test-e2e` + `test-unit`（新增 writing-drafts） | 否 |
@@ -1128,6 +1130,8 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 | F-09 | `m/companion` | `m-event` 仍为固定文本「A500 本周波动上升 / 权益暴露 20%」，属虚构事实（A13）；「目标完成度」无服务端字段 | 事件内容改知识片段驱动或改显式空态；不得保留虚构数字 | `frontend-flow`（+`backend`） |
 | F-10 | `pc/architecture` | 页面只读 `/api/health` 的 `dependencies`，未消费 `GET /ready` 的 7 项 checks；失败态与「无待处理事项」空态无断言 | 消费 `/ready`；补 F/E 三态 | `frontend-lead` |
 | F-11 | `pc/reader` | 阅读器展示页码/标题，但「摘要必须带 `document_id`」的实现需复核 `readerDocumentRef()` 是否在各入口都取到 `doc-*`（#24 只改了引用展示） | 复核并补 `document_id` 缺失时的 400 失败态断言 | `frontend-lead` |
+| F-12 | `pc/events`、`pc/macro`、`pc/industry` | `researchPage(type)` 无条件静态空态：不读 `session()._knowledgeChunks` / `_knowledgeStatus`，页面自身也不发起 `GET /api/knowledge`；`wealth-session-sync-error` 对 `kind==='initialization'` 直接 return。**#34（OPEN，未合并）** 用受控 2xx / 503 证明 S 片段渲染与 F 接口失败真实错误均不可达，三路由 × S/F × 2 工程 = **12 红**；E 真实空态 6 绿 | 由 `frontend-lead` 让三页消费 `GET /api/knowledge`（片段、时点、错误码），保留真实空态；修复前 #34 的 12 条断言保持红，不得 skip/放宽、不得以静态空态冒充成功 | `frontend-lead`（待修复；#34 未合并） |
+| F-13 | `pc/research` | `public/actions/research.js` 的 `ask` 在空输入时回退到默认问题，PC 研究页真实空输入不会走到 `prompt-needed`。**#32（OPEN，未合并）** 只能用「真实无来源空态 + 一条受控 `prompt-needed` 落点断言」覆盖，**不能视为最终真实链路覆盖** | 由 `frontend-research` 接续修复：空输入直接落到 `prompt-needed`，不得回退默认问题；修复后把受控落点断言改为真实动作断言 | `frontend-research`（续修中，暂无合并 PR） |
 | F-00（已修复） | `pc/product-deposit` | 目录加载完成后未重渲染、区间事实空值未守卫（#26 修复） | 已由 #26 修复；#27 三态用例为回归证据 | `frontend-lead`（已完成） |
 
 > **红线**：上表缺陷**不得**通过删断言、放宽断言、改成功态或 `skip` 规避。任一缺陷未修复时，对应三态用例应保持对目标行为的断言并红，直至修复项合并。**优先修复再补断言**，避免把「当前错误行为」固化成验收基线。
