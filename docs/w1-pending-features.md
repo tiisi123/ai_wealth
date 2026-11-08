@@ -12,7 +12,7 @@
 | DEMO 验收标准 | 架构文档 V2.3 第 11 章 A01–A35，是 DEMO 的通过条件；本清单的「职责页」与「关联 A 项」只做交叉索引 |
 | 台账 | 架构文档附录 A（R2–R62 逐条承载与判定归属），本清单不复制其表格 |
 | 本文性质 | 需求侧完成条件与验收归属；**不含测试代码**，不新增运行页面，不改 `CONTEXT.md`、`README.md`、架构文档、`tests/`、`src/`、`public/`、`scripts/`、`.github/`、`package.json` |
-| 基线 | `origin/main` = `5bcb1cc`（波次 4 合并后；本清单首版写于基线 `53eb19c`，波次 1 后校正为 `d0b7620`，波次 3 起校正为 `cf07b1b`，波次 4 起校正为 `9411ead`，波次 5 起校正为 `5bcb1cc`，均见 §0.3 / §0.4 / §0.5 / §0.6）。所列「当前演示态」均为该基线上 `public/app.js`、`public/actions/*.js` 与 `src/` 的**代码事实**，不是人工观感描述 |
+| 基线 | `origin/main` = `e4d8f49`（波次 5 合并后；本清单首版写于基线 `53eb19c`，波次 1 后校正为 `d0b7620`，波次 3 起校正为 `cf07b1b`，波次 4 起校正为 `9411ead`，波次 5 起校正为 `5bcb1cc`，波次 5 收档起校正为 `e4d8f49`，均见 §0.3 / §0.4 / §0.5 / §0.6 / §0.7）。所列「当前演示态」均为该基线上 `public/app.js`、`public/actions/*.js`、`public/actions-registry.js`、`tests/e2e/` 与 `src/` 的**代码事实**，不是人工观感描述 |
 
 ### 0.3 基线校正与波次 1 收工登记（2026-11-05 复核）
 
@@ -84,6 +84,21 @@
 - **#18 不等于 P-04 / P-15 / P-17 达标**：服务端入口归一化只是「页面能拿到成功态」的前提；页面成功态仍需在真库 + 三态用例下验证。
 - **#20 不等于 P-13 达标**：动作层已改接真实产品事实并交齐「无来源空态」，但保单数据源仍缺（§8.1 第 6 项仍需 `data` 提供保单表），列表页与保单内容差异用例未补，**仍计未完全达标**。
 - **本波次属「已推进 · 波次 4」的条目**（原条目不删除，在下文对应条目追加标注）：P-02、P-03、P-04、P-06、P-08、P-12、P-13、P-14、P-15、P-16、P-17。
+
+### 0.7 波次 5 收口登记与基线推进（2026-11-06，基线 `e4d8f49`）
+
+波次 5 已合并 5 个 PR：`d6c7fa0`（#23 本清单波次 4 登记）、`a28e846`（#24 H 类 UI 收口）、`62ea985`（#25 三态用例 P-01/P-04/P-15）、`571e069`（#26 存款页重渲染修复）、`e4d8f49`（#27 PC 存款三态）。基线由 `5bcb1cc` 推进到 **`e4d8f49`**。本节只登记「代码事实变了什么」，**不改写 §1.1 / §1.2 的缺口基数**（覆盖口径改由 §15 矩阵重算）。
+
+| PR | 类型（owner） | 对本清单的实质影响 |
+|---|---|---|
+| #24 | frontend-lead（`frontend-lead`） | H-01…H-06 的**页面侧**缺口收口：`pc/workspace` 最近使用/提醒改读 `activities[]`；`pc/candidates` 引导空态 + 理由/排序取 `candidateCalculation.reasons[]`；`pc/compare`、`m/compare` 消费 `comparable` / `incomparable_reason` 并显示「不可排名」；`pc/research` 重复提问提示与超范围拒答；`m/assistant` 删除硬编码提醒；`m/allocation` 新增 `rule-unsupported` 结果页规格；A04 新增可见「撤销授权」（复用 `set_authorization`，无新命令）；A20 引用展示 `chunk` 标题与页码。**冻结集合未改**（36/19/7/11 原样）。 |
+| #25 | test-e2e（`test-e2e`） | 新增 `tests/e2e/three-state.spec.js`：P-01 成功态、P-04（`m/deposit` + `pc/product-deposit`）成功/失败/空三态、P-15 成功态。注入响应结构取自当前 `controllers` / `businessRulesService` / `portfolioService` / `healthService`；属**受控契约响应**，不是真实业务数据验收。 |
+| #26 | frontend-lead（`frontend-lead`） | **生产缺陷修复**：`pc/product-deposit` 在 `GET /api/demo-data` 落地后没有重渲染、区间事实空值未守卫，导致 PC 存款页拿不到成功态。修复后才具备三态断言前提（#27 只加断言、不改生产代码）。 |
+| #27 | test-e2e（`test-e2e`） | `tests/e2e/three-state.spec.js` 扩展到 `pc/product-deposit` 的成功/失败/空三态。 |
+
+**E2E 规模更新（代码事实）**：`tests/e2e` 现有 6 个文件（`contract.spec.js` 4 用例、`mobile-flow.spec.js` 2、`pc-flow.spec.js` 1、`work-items.spec.js` 2、`three-state.spec.js` 5，另有 `helpers.js`），共 **14 个用例**；`pc` 工程排除 `mobile-flow`、`mobile` 工程排除 `pc-flow`，故合计 **25 次运行**。§1.2 / §13.4 中「15 次运行」的表述**自此被本节与 §15.1 取代**（原文保留追溯）。
+
+**仍未变化的边界**：这 4 个 PR 都没有改 A–G 列指标、没有新增运行路由、没有改冻结集合、没有把 fixture 结果写成真实模型或生产验收结论。**页面三态覆盖的准确计数以 §15 为准**：H 类 UI 已收口不等于每个页面都有独立的三态断言。
 
 ### 0.1 真实模型与 fixture 的表述边界
 
@@ -234,6 +249,8 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 | ②「30 页逐页达标」 | **0 / 30 页达标**（23 / 23 条目待办，45 / 48 单项缺口待办） | 需每个条目在 §2 模板下交齐成功/失败/空三态与真实服务端来源；「成功态 + 三态用例齐备」才算达标，**仅删假值不计数** | 不表示主链路未通；①与②互不替代 |
 
 > 口径 ① 中 `5bcb1cc` 的门禁结论**待编排器确认**：本清单作者按任务约束不得查阅或触发 CI，本期以 `9411ead` 的已合并结论 + #20 / #21 PR 描述中的本地 15/15 为准；合并后基线若与本登记不一致，以编排器回填为准。
+
+> **基线 `e4d8f49` 追加更正（2026-11-06，取代本节上述 E2E 规模）**：波次 5 已合并 #24–#27，`tests/e2e` 现为 **14 个用例 / 25 次运行**（见 §0.7）。**「逐页三态覆盖」不再按本节与 §13.4 的「无三态用例」笼统表述**，以 §15 矩阵按路由逐条重算：完整三态断言的路由为 **2 / 30**（均属 P-04 的 `m/deposit` 与 `pc/product-deposit`，且为受控契约响应），仅成功态独立断言的为 **4 / 30**，零独立三态断言的为 **26 / 30**。口径 ② 的结论仍为 `0 / 30`「真实业务数据验收达标」，但**依据已换为 §15**，不再以「完全没有三态用例」为由。
 
 **E2E 覆盖口径（基线 `5bcb1cc`，如实登记）**：`tests/e2e` 在 `5bcb1cc` 上仍为 **9 个用例**（`contract.spec.js` 4、`work-items.spec.js` 2、`pc-flow.spec.js` 1、`mobile-flow.spec.js` 2）× 2 个 Playwright 工程（`pc` / `mobile`）= **15 次运行**，#18/#19/#20/#21 **均未新增 E2E 用例**（`git diff --stat 4c2bcda 5bcb1cc` 无 `tests/` 改动；`tests/e2e/` 仍为 5 个文件，含 `helpers.js`）。#17 改接的 3 页与 #20/#21 涉及的 9 个条目**均无成功/失败/空三态用例**，仅由 PR 描述中的人工核验与 `npm run test:e2e` 的回归作为证据，**不构成 ② 的达标证据**。E2E 扩展归波次 5（§12.2）。
 
@@ -574,12 +591,12 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 
 | A 项 | 现状（代码事实） | 修正后应满足 | 归属测试 |
 |---|---|---|---|
-| A04 授权拦截 | 未授权时 `auth-needed`；`assertAuthorized()` 拒绝方案/候选/比较/陪伴命令；**取消授权**命令已存在但页面无入口（**波次 5 复核**：`public/app.js` 与 `public/actions/*.js` 均无 `revoke` / `撤销授权` 字样，仍是波次 5 待办） | 页面上可见「撤销授权」并验证下游 `downstreamReset()` | `tests/integration` |
+| A04 授权拦截 | 未授权时 `auth-needed`；`assertAuthorized()` 拒绝方案/候选/比较/陪伴命令；~~取消授权命令已存在但页面无入口~~（**波次 5 · PR#24 已收口**：`public/actions-registry.js` 新增 `m-revoke-auth`，点击调用 `set_authorization(authorized:false)` 并要求服务端返回 `APPLIED` + `authorized=false` 才显示成功；未新增命令、未改 PATCH 白名单）。**仍缺**：撤销后 `downstreamReset()` 逐 key 的独立 E2E 断言（现有 `mobile-flow.spec.js` 只断言 `plan` / `candidates` / `compareSaved`，未逐步断言 11 个 key，也未断言 `writingDrafts`——后者属变更 C-02） | 页面上可见「撤销授权」并验证下游 `downstreamReset()` | `tests/integration` |
 | A09 问答边界 | `research_qa` 无片段 → `422`（已有 E2E）；`assistant_qa` 结构化事实不足才 `422` | `pc/events`/`macro`/`industry` 与 `m/assistant` 分别验证 | `tests/e2e` |
 | A10 分支闭环 | 保险、私行、持仓收益仍为静态（**波次 4 更新**：保险动作与持仓收益已改接服务端，#20/#17；私行 P-05 仍整页受限、未消费 `qualified_status` 派生投影） | P-05、P-13、P-15 收工后闭环 | `tests/e2e` |
-| A13 真实表达 | ~~存在硬编码 KPI 与「99.98%」「94.6%」~~（**波次 5 复核**：`pageArchitecture()` 已改为只读 `GET /api/health` 的 `dependencies.*` 与 `api_version`/`frontend_contract_version`，无来源的调用量/评测通过率不展示；#21 进一步清除了 P-02 / P-03 / P-06 / P-08 / P-14 / P-16 的产品与计数硬编码。`99.98` / `94.6` 在 `public/app.js` 已无命中；**仍需**一条「页面无默认 KPI」的 E2E 断言，且 `/ready` 的 7 项 checks 前端仍未消费） | 由 P-01 清除 | `tests/e2e` |
+| A13 真实表达 | ~~存在硬编码 KPI 与「99.98%」「94.6%」~~（**波次 5 复核**：`pageArchitecture()` 已改为只读 `GET /api/health` 的 `dependencies.*` 与 `api_version`/`frontend_contract_version`，无来源的调用量/评测通过率不展示；#21 进一步清除了 P-02 / P-03 / P-06 / P-08 / P-14 / P-16 的产品与计数硬编码。`99.98` / `94.6` 在 `public/app.js` 已无命中；**PR#25 已补**成功态下「页面不含 `99.98%` / `18,426` / `94.6%`」的独立断言；**仍缺**失败态（`/api/health` 不可达）与空态（无待处理事项）断言，且 `/ready` 的 7 项 checks 前端仍未消费） | 由 P-01 清除 | `tests/e2e` |
 | A18 请求一致性 | `runRealAiTask()` 用 `activeAiRequestToken` 丢弃旧响应；**PR#9** 在规则执行前复核会话版本 | 现有机制需一条显式用例 | `tests/e2e` |
-| A20 知识引用可回指 | ~~页面仅显示 `chunk_id`，**未显示标题与页码**~~（**波次 5 复核**：`pageReader()` 已展示片段 `title`、第 N 页与 `source_id`，`pageLibrary()` 展示每产品片段的 `document_id`；**仍缺**：研究问答、摘要、写作三类结果的引用卡片的标题/页码回指） | 引用展示 `title` + `page`（`/api/knowledge` 自 PR#6 起文档条目显式带 `title`，`chunk_id` 可回指） | `tests/e2e` |
+| A20 知识引用可回指 | ~~页面仅显示 `chunk_id`，**未显示标题与页码**~~（**波次 5 · PR#24 已收口页面侧**：研究问答、摘要、写作结果卡片的引用改为 `chunk_id` + 标题 + 页码，由 `GET /api/knowledge` 的文档/片段投影驱动；`pageReader()` 与 `pageLibrary()` 原有页码/文档回指保留）。**仍缺**：一条断言「引用卡片同时含标题与页码」的 E2E；`chunk_id` 缺失时页面须显式「无知识片段引用」而非空标签——该空态尚未有独立断言 | 引用展示 `title` + `page`（`/api/knowledge` 自 PR#6 起文档条目显式带 `title`，`chunk_id` 可回指） | `tests/e2e` |
 | A34 服务开放 | `/api/demo-data` **不带 `session_id` 时在 `DATA_MODE=database` 直接 400** | 外部调用者需先建会话再传 `session_id`；验收用例必须体现该前置 | `tests/unit`（不含 DB 的接口契约用例） |
 | A35 真实时延 | `ai_requests` 记录 `latency_ms`、`model`（已存在）；页面展示时延 | 保持 | `tests/integration` |
 
@@ -589,6 +606,8 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 
 > **本节是唯一入口**：下列 8 项任一落地都属于契约变更。**任一项落地需状态契约 owner 批准，并同步 `docs/api-contract.md`「共享会话状态契约（W1 冻结）」与 `tests/unit/session-contract.test.js` 的 36 key / 19 PATCH 字段 / 7 命令 / 11 `downstreamReset` 集合断言**。未获批准前，Worker 不得先行改动冻结集合，也不得在前端构造对应状态。
 >
+> **2026-11-06 修订（用户已批准）**：原「同一 PR 内同时改文档、代码与测试断言」与 `ci-ownership` 的单 Agent 目录约束冲突（`docs/` 属 `docs`，`src/components/sessions/` 属 `contract`，`tests/unit/` 属 `test-unit`，任一 PR 跨这三处必然被 `ci-ownership` 拒绝）。**改为「同一变更编号的一组 stacked PR、按依赖顺序合并、在最后一个 head 上组合验证」**，不绕过 `ci-ownership`、不打 `baseline` label、不拆成永久不同步。详见 §8.2 第 2 款与新建 §8.3；本条第 3 项（`contactTodo`）与第 7 项（写作草稿）的批准结论见 §14。
+>
 > - **冻结集合 owner**：`contract`（`scripts/ci/check-ownership.mjs`：`public/demo-data.js`、`public/session-sync.js`、`src/components/sessions/`、`src/fixtures/`、`src/interfaces/http/`、`src/config/`）。
 > - **业务规则/计算 owner**：`backend`（`src/components/business-rules/`、`src/components/ai-orchestration/`）。
 > - **数据源 owner**：`data`（`db/`、`scripts/seed/`）。跨 owner 的项必须由 `contract` 牵头会签，不得由单一 owner 自行合并。
@@ -596,15 +615,15 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 
 ### 8.1 八项变更清单
 
-| # | 变更（待批准规格） | 涉及页面 | 变更类型 | 是否改动冻结集合（36 key / 19 PATCH / 7 命令 / 11 `downstreamReset`） | 需同步的文档与测试断言 | 前置依赖 | 现状（`cf07b1b`） |
+| # | 变更（批准状态） | 涉及页面 | 变更类型 | 是否改动冻结集合（36 key / 19 PATCH / 7 命令 / 11 `downstreamReset`） | 需同步的文档与测试断言 | 前置依赖 | 现状（`e4d8f49`） |
 |---|---|---|---|---|---|---|---|
 | 1 | **规则匹配产出有效 `rule_id`**：默认目标 → `allocation-balanced-r3`，R1/R2 → `allocation-liquid-r2`（**已成立**，无需再审批） | H-06 → `m/candidates`、`m/compare`、`m/companion` | 无需变更（既有 fixture 行为，非契约） | **不改冻结集合** | 无需改 `session-contract.test.js`；`tests/unit/fixture-model-client.test.js`、`tests/integration/w1-flow.test.js` 已断言 `allocation-balanced-r3` | 无 | **已达**：`pickAllocationRule()` 自 `2d9ad15` 起生效。原「`rule_id: null` → `UNSUPPORTED_RULE`」登记作废。仅剩 **H-06 缺口 ②③**（`UNSUPPORTED_RULE` 独立结果页、`NEED_CONFIRMATION` 可达性）需**前端结果页**改动，仍属契约外的 UI 变更，可随 `frontend-flow`/`frontend-lead` 提交 |
 | 2 | **合格投资者认定状态**：新增只读字段（如 `qualifiedStatus`），由服务端快照派生，浏览器不可写 | P-05（`pc/product-private`、`m/private`） | 新增只读状态 key | **新增状态 key**：36 → 37（读模型）；若同时从 `defaultSessionState()` 落值，需在只读项（现 9 项）中登记 | `docs/api-contract.md` 契约表 + `session-contract.test.js` 的 36 项断言与只读分组断言；`CONTEXT.md` P0 #3 状态表 | 数据侧需先有认定来源（`db/`）；若复用 `customer.authorized`，须说明与授权的语义差别（A13） | 无写入方，`qualified` 已归只读。**已推进 · 波次 3**：口径改按只读派生投影（不进 `defaultSessionState()`，不新增状态 key），页面接线后落地，见下方「波次 3 决策记录」一 |
-| 3 | **`contactTodo` 迁移**：由 `PATCH` 可选字段改为 `record_activity`（`kind` 新增一类）或独立命令 `record_contact_request` | P-05（`m/private` 的 `m-contact`） | 命令迁移 | **改 PATCH 白名单**（19 → 18）并**新增命令**（7 → 8）或**新增 activity kind**（14 → 15） | `docs/api-contract.md` 契约表；`session-contract.test.js` 的 19/7 断言；若走 activity kind 还需 `tests/unit/activities.test.js` 白名单断言；`public/app.js` 的 `landingSpec` 映射 | 需先确认 `m-contact` 是否应保留「仅行内待办」语义（A11 要求服务端可见记录） | 现为 `SESSION_PATCH_FIELDS`，仅 PATCH。**已推进 · 波次 3**：仍滞后，只读投影无法替代写入面，须 owner 批准，见「波次 3 决策记录」二 |
+| 3 | **`contactTodo` 迁移（已批准 · C-01）**：由 `PATCH` 可选字段改为 `record_activity(kind='contact-request')`；`contactTodo` 保留为**只读兼容字段**（读时由 `activities[]` 派生，不作写入真源） | P-05（`m/private` 的 `m-contact`） | 命令迁移（新增 activity kind，不新增命令） | **PATCH 19 → 18**；**activity kind 14 → 15**；命令 7 → 7；状态 36 → 36；`downstreamReset` 11 → 11（`activities` 已在清理集合内，派生字段随之清零） | `docs/api-contract.md`（本 PR 已写批准规格）+ `tests/unit/session-contract.test.js` 的 19 项 + `tests/unit/activities.test.js` 的 15 kind 白名单 + 前端 `landingSpec` 文案与 `m-contact` 分支 | 无（`record_activity` 已存在）；需回归「撤权后联系记录不残留」 | **已批准 · 待按 §8.3 stacked 组落地**；现仍为 PATCH 写入（`public/actions/flow.js` 的 `m-contact`） |
 | 4 | **存款本息确定性计算**：接入已有 `deposit-interest-simple`，统一百分数/小数单位（`2.15%` → `0.0215`），入口在**只读计算接口**与**会话命令**中二选一 | P-04（`pc/product-deposit`、`m/deposit`、`m-deposit-compare`） | 新增入口（计算已存在） | 二选一：**只读接口**（`src/interfaces/http/`，不改冻结集合，但属 API 契约新增）／**新增命令**（7 → 8，改冻结集合） | 只读接口：`docs/api-contract.md` 新增端点节；命令：契约表 + 7 项断言。两种都需 `tests/unit` 单位回归（`2.15` vs `0.0215`） | `backend` 需先给 `executeDeterministic()` 补调用方与单位守卫；`data` 保证 `products.annual_rate`（`deposit`=2.15%）唯一真值 | 浏览器计算；`executeDeterministic()` **全仓无调用方**；百分数误传会放大 100 倍。**已推进 · 波次 3**：PR#11 已落 `calculateDeposit()` 只读入口与单位守卫，改走只读接口形态；端点路径以 contract PR 描述为准，见「波次 3 决策记录」一 |
 | 5 | **持仓收益/贡献/集中度计算**：复用 `portfolioCalculation`，页面字段经服务端产出 | P-15（`m/holdings`） | 新增只读计算入口 **或** 复用已有证据包装配 | **不改冻结集合**（若走 `portfolio_calculation` 证据路径）／**新增状态 key**（若要求直接落会话字段） | 走证据路径：`tests/integration` 断言 `calculation_id` 与 `max_concentration`；落会话字段：契约表 + 36 项断言 | **PR#9 已提供前提**：`finalizeEvidence()` 将 `portfolio_calculation` 嵌入 `structured_facts.holdings[]`；剩余为页面侧消费与分母口径（全资产 41.76% vs 权益内 68%） | 页面硬编码；分母口径与文案未统一。**已推进 · 波次 3**：PR#11 已落 `PortfolioService.calculate()` 只读投影（双分母 + `estimated`），改走只读投影形态，见「波次 3 决策记录」一 |
 | 6 | **保单与保障缺口数据来源**：新增保单表/接口（覆盖度、缺口、待办，按保单 ID 区分） | P-13（`m/insurance`）、P-03 保险板块 | 新增数据源 | **不改冻结集合**（只读数据接口）；若需写入会话则另行登记 | `docs/api-contract.md` 新增只读数据节；`tests/integration`（不含 DB 时用契约桩）与 `tests/e2e`（两张保单内容不同 + 空态） | `data` 新表 + seed；`contract` 定路由；**不得前端伪造**（A13、R32） | 无任何保单来源；`m-coverage`/`m-policy` 只开同一固定弹窗。**已推进 · 波次 3**：口径改按只读派生投影（仅产品事实可确定字段，无来源即空态），页面接线后落地，见「波次 3 决策记录」一 |
-| 7 | **写作草稿持久化**：草稿写入服务端并刷新可回看 | P-10（`pc/writing`） | 新增状态 | **新增状态 key**（36 → 37，如 `writingDrafts`）或**新增命令**（7 → 8，如 `save_draft`） | 契约表 + 36/7 断言；`tests/e2e`（生成→刷新→回看） | 需确定草稿是否属 `activities` 之外的持久对象（A11 要求服务端存在）；AI 结果投影现状在前端 `PATCH` 写回 | 仅结果页可见，回页即消失。**已推进 · 波次 3**：仍滞后，需新增状态 key 或命令，须 owner 批准，见「波次 3 决策记录」二 |
+| 7 | **写作草稿持久化（已批准 · C-02）**：新增 `save_draft` 命令 + 服务端权威 `writingDrafts`（draft id/content/source request_id/created/updated，沿用 `expected_version` + `request_id` 幂等） | P-10（`pc/writing`） | 新增命令 + 新增状态 key | **命令 7 → 8**（`save_draft`）；**状态 key 36 → 37**（`writingDrafts`）；PATCH 白名单**不扩大**（C-01 后保持 18）；`downstreamReset` 11 → 11，撤权时在 `set_authorization` 撤权分支显式清空（见 §14.4） | 契约表 + `session-contract.test.js` 的 36/7/19 断言；新增 `tests/unit/writing-drafts.test.js`（幂等、越权、超限、撤权清理）；`tests/e2e`（生成→保存→刷新→回看 + 失败/空） | 需确认 `source_request_id` 与 `ai_requests` 的**服务端**一致性校验（不以浏览器 `aiRequests` 数组为真） | **已批准 · 待按 §8.3 stacked 组落地**；现草稿只在结果页显示，回页即消失 |
 | 8 | **H-06 失败态结果页拆分**（登记以便集中处理，**不属状态契约**）：`UNSUPPORTED_RULE` 使用独立 `landingSpec`，`NEED_CONFIRMATION` 保留 `rule-confirmation` 且文案与 `missing_fields` 对应 | H-06（`m/allocation`） | 前端 `landingSpec` + `public/actions/flow.js` 分支 | **不改冻结集合** | 无需改契约文档与 `session-contract.test.js`；需 `tests/e2e`（规则不匹配失败态）与 `tests/unit`（三类状态映射） | 无（服务端已在非 MATCHED 时返回 `patch: {}`，不覆盖旧方案） | 两类状态共用 `rule-confirmation`，`UNSUPPORTED_RULE` 文案错位 |
 
 #### 波次 3 决策记录（2026-11-05，基线 `cf07b1b`）
@@ -651,7 +670,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 ### 8.2 波次 3 处理约定
 
 1. **先批准后实现**：§8.1 的 2–7 任一项，须先取得 `contract` owner 批准（跨 owner 项含会签），再改代码；批准结论记录在对应 issue/PR 描述中；
-2. **一次性同步**：批准后同一次 PR 内同时改 `docs/api-contract.md` 与 `tests/unit/session-contract.test.js`，不得只改其中一侧；集合断言失败即视为未获批准；
+2. **同组同步（2026-11-06 已批准修订）**：批准后，同一变更编号的文档、契约代码、测试断言与前端消费**必须落在同一组 stacked PR 内**，按 §8.3 的依赖顺序合并，并在该组最后一个 head 上做组合验证；**不再要求单一 PR 同时跨 `docs/`、`src/`、`tests/` 三个 owner**——那会被 `ci-ownership` 拒绝，且用 label 或改名绕过均属违规。集合断言与 `docs/api-contract.md` 若出现一侧未改，该组视为未完成，不得合并最后一环；
 3. **只读优先**：能用只读接口/证据包表达的（第 4 项接口形态、第 5、6 项）优先，避免扩大写入面；
 4. **不得搭便车**：任何条目不得顺手改动与自身无关的冻结项或新增运行页面（§6 红线 1）；
 5. **波次 3 补充**：「波次 3 决策记录」一列出的 P-04 / P-15 / P-05 / P-13 四项走只读端点或派生投影，**不属于**本条第 1 款的批准范围（冻结集合不变），因此无需 owner 批准即可实现与验收；但若实现过程中发现必须改任一笔冻结集合，须立刻停止，回到 §8.1 重新登记并回到第 1、2 款流程；
@@ -678,6 +697,34 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 - **冻结集合全程未变**：波次 3、波次 4（#18 / #19 / #20 / #21）与波次 5 并行工作包均未改动会话状态契约——`defaultSessionState()` 36 key、`SESSION_PATCH_FIELDS` 19 项、`SESSION_COMMANDS` 7 项、`downstreamReset()` 11 key 一律原样，`tests/unit/session-contract.test.js` 的冻结断言未被改写（#18 的归一化只改 `src/platform/` 与两个 service 的入口类型处理，不写状态；#20 / #21 为前端；#19 与本 PR 为纯文档）。
 - **仍未批准的待批准项**：`contactTodo` 从 `PATCH` 迁出（§8.1 第 3 项）、写作草稿持久化（§8.1 第 7 项），以及**任何新增状态 key**（含若后续要把认定结果或保单落成会话字段），仍属「需状态契约 owner 批准」的待批准项，**W1 全程不落地、不先行实现**；批准前页面只能消费只读投影与派生投影。
 - **P-05 / P-13 的派生投影仍只读**：`qualified_status`（恒 `UNKNOWN` / `no_qualified_source`）与 `insurance_coverage`（`policy_id` 恒 `null`、`coverage_gap.available=false`）不构成写入通道，页面改接它们**不属于** §8.1 的批准范围。
+
+### 8.3 变更组与 stacked PR 约定（2026-11-06 用户已批准）
+
+> 本节解决「同一变更必须同步文档 + 契约代码 + 测试断言，但 `ci-ownership` 只允许单个 Agent 目录」的结构性冲突。**不降低同步要求，只改变落地形态。**
+
+**事实前提（代码）**：`scripts/ci/check-ownership.mjs` 按分支名 `ao/<agent-id>/<topic>` 取 Agent 身份，再校验 PR 的 changed files 是否落在该 Agent 的路径前缀内；`docs/` 只属 `docs`、`src/components/sessions/` 只属 `contract`、`tests/unit/` 只属 `test-unit`、`tests/e2e/` 只属 `test-e2e`、`public/app.js` 只属 `frontend-lead`。**任何单个 PR 同时改这三类路径都会被拒绝**，这不是可以通过改名、加 label 或跳过 job 解决的流程问题。
+
+**约定**：
+
+1. **以「变更编号」分组**：C-01（`contactTodo` 迁移）与 C-02（写作草稿持久化）各成一组；组内 PR 共享同一变更编号前缀（如 `ao/docs/c01-spec`、`ao/contract/c01-schema`），分支名仍按各自 Agent 的 `ao/<agent-id>/<topic>` 命名。
+2. **固定依赖顺序**：`docs`（规格与契约表）→ `contract`（状态/命令/校验/HTTP 与 `src/fixtures`）→ `test-unit`（`tests/unit`、`tests/http` 集合断言）→ `frontend-lead`/`frontend-flow`（页面消费与文案）→ `test-e2e`（三态与刷新恢复用例）。每组可按实际需要裁掉不涉及的环节，但**不得颠倒依赖**：测试与前端必须基于已合并的契约实现。
+3. **stacked 形态**：组内第 N 个 PR 的 base 设为第 N−1 个 PR 的 head 分支；`ci-ownership` 因此只看到本 PR 相对上一环的增量 diff，天然落在单一 Agent 范围内。合并时按同序合并到 `main`（合并后 GitHub 自动 retarget 下一环），**不允许把多个 owner 的文件塞进同一 PR 再声称「同一 PR 同步」**。
+4. **组合验证**：组合正确性以**该组最后一个 head** 的 6 个 job + `ci-merge-gate` 为准，并在该 head 上执行：
+   - `tests/unit/session-contract.test.js` 的新集合断言（36/19/7/11 按 §14.5 的目标值）；
+   - 新增/修改的 `tests/unit`、`tests/e2e` 用例；
+   - `docs/api-contract.md` 与本清单的集合数字与实际断言逐项一致（人工比对 + 代码事实）。
+   任何一环的门禁失败，只能在该环自己的 owner 分支修复，**不得通过移动文件、改 ownership 规则或加 `baseline` label 绕过**。
+5. **组合未完成不得宣称收工**：组内任一环未合并，C-01 / C-02 在 §1.2 与 §15 中仍计「待办/未达标」；文档、契约、测试三者出现一侧缺失即视为未获批准（沿用 §8.2 第 2 款）。
+6. **回退**：若某环需要撤销，按逆序回退该组；不允许只回退测试而保留代码，或只回退文档而保留集合改动。
+
+**C-01 / C-02 的组内 PR 映射（供编排器派工）**
+
+| 变更 | 1 docs（本 PR 已含批准规格） | 2 contract | 3 test-unit | 4 frontend | 5 test-e2e |
+|---|---|---|---|---|---|
+| C-01 | 本 PR：§8.1 #3、§14、`docs/api-contract.md` 新节 | `src/components/sessions/domain/session.js`（19→18、kind→15）、`sessionService.js`（`contact-request` 分支 + 读时派生 `contactTodo`）、必要时 `src/interfaces/http/controllers.js` | `tests/unit/session-contract.test.js`（18 项、15 kind）、`tests/unit/activities.test.js`（新 kind、上限、非法 kind 拒绝） | `public/actions/flow.js` 的 `m-contact` 改调 `record_activity`；`landingSpec` 文案 | `m/private` 成功/失败/撤权空态三态；`contactTodo` 不再可 PATCH |
+| C-02 | 本 PR：§8.1 #7、§14、`docs/api-contract.md` 新节 | 新增 `save_draft`（8）、`writingDrafts`（37）、校验与撤权清理；`defaultSessionState()` 加 key | `tests/unit/session-contract.test.js`（37/8）、新增 `tests/unit/writing-drafts.test.js`（幂等、越权、超限、`source_request_id` 校验、撤权清空） | `public/actions/research.js` 或 `frontend-lead` 的写作分支调 `save_draft`；`pc/writing` 读取 `writingDrafts` | `pc/writing`：生成→保存→刷新→回看；保存失败（409/400）；无草稿空态 |
+
+> 上述映射只是**派工建议**，具体文件以实施时 `scripts/ci/check-ownership.mjs` 的前缀为准；若某文件不属于预期 Agent，应调整实现位置或申请新增映射，不得直接跨目录提交。
 
 ## 9. 领取与验收流程
 
@@ -721,7 +768,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 | A01 | 双节点启动与界面边界 | 部分完成 | 0.2 白名单 30 路由可达，`tests/e2e` 的 `contract`/`mobile-flow`/`pc-flow`/`work-items` 覆盖菜单与路由边界（15 次运行）；**「A、B 两个实例 + 负载均衡」本轮未在 W1 验证**（单实例开发态），双节点归后置。 |
 | A02 | 数据与知识真实性 | 部分完成 | `GET /api/demo-data` 发布 `products[]` / `holdings[]` / `knowledge` 投影，字段带 `source_id` / `source_timestamp`（#14 / #21 页面消费）；知识条目带 `page`（`tests/unit/fixture-parity.test.js`、`fixture-parity` 断言 JS fixture 与 SQL seed 一致）；**行内客户/持仓与当天产品仍为演示 fixture**，非行内真实数据。 |
 | A03 | 主流程 | 部分完成 | 手机主闭环 E2E 通过（`tests/e2e/mobile-flow.spec.js`「助手 → 配置 → 候选 → 比较 → 投后陪伴」），`ensureAuthorization()` 真实点击生成方案；PC 闭环见 `pc-flow.spec.js`；**要求的是「助手 → 持仓 → 诊断 → 配置 → 候选 → 比较 → 陪伴」连续串行**，现有用例把持仓/诊断段拆开或跳过，故仅部分完成。 |
-| A04 | 授权拦截 | 部分完成 | `m/allocation` 未勾选 → `auth-needed`；`tests/unit/sessions.test.js`「generic session patch cannot forge authorization…」与「comparison requires two real products and revocation clears downstream state」（`mobile-flow.spec.js:34` 撤销授权清方案/候选/比较）已验证下游清理；**页面无「撤销授权」入口**（§7 A04），`downstreamReset()` 11 key 未按页面路径逐一验证。 |
+| A04 | 授权拦截 | 部分完成 | `m/allocation` 未勾选 → `auth-needed`；`tests/unit/sessions.test.js`「generic session patch cannot forge authorization…」与「comparison requires two real products and revocation clears downstream state」已验证下游清理；**PR#24 已补页面「撤销授权」入口**（`public/actions-registry.js` 的 `m-revoke-auth` 复用 `set_authorization`，未新增命令）；`mobile-flow.spec.js` 仍只断言 `plan` / `candidates` / `compareSaved` 三项，**`downstreamReset()` 的 11 个 key 未逐 key 断言**；C-02 落地后还须断言 `writingDrafts` 被清空。 |
 | A05 | 配置一致性 | 已完成 | `generate_allocation` 100% 合计（`tests/unit/rules.test.js`）；目标变更使旧候选/比较失效（`tests/unit/sessions.test.js:56`「goal changes invalidate plans, candidates and comparisons」）。 |
 | A06 | 候选逻辑 | 部分完成 | 候选资格/理由/排序由 `candidateCalculation` 给出（#9），`reasons[].constraints` 与 `holding_months` 已由 #21 在 `m/candidates` 消费；`tests/unit/rules.test.js:22` 断言风险/期限/流动性/可售四类约束；**`pc/candidates` 仍未消费 `score`/`candidateCalculation`**（§4 H-02 波次 5 复核）。 |
 | A07 | 比较逻辑 | 部分完成 | `save_comparison` 要求 2–3 个真实产品（`tests/unit/sessions.test.js:43`），`m-compare-add` 经 `/api/demo-data` 校验 `product_id`（#12）；服务端产出 `comparable` / `incomparable_reason`；**前端仍未消费该口径**（H-03）。 |
@@ -730,14 +777,14 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 | A10 | 分支闭环 | 部分完成 | 保险动作已按被点击产品渲染真实事实（#20），持仓收益接只读端点（#17），理财/存款有入口；**私行 P-05 仍整页受限、未消费 `qualified_status`**；报告阅读与智能写作能到达结果页但正文/草稿无真实持久化；选品/模型运营/来源接入/交付验收不设运行页面（§5.2）。 |
 | A11 | 动作状态 | 部分完成 | `record_activity` 服务端生成 `activity_id`，同 `request_id` 幂等（`tests/unit/activities.test.js`）；比较/陪伴提交用 `showActionError` 显示真实错误；**写作草稿不持久**（§8.1 第 7 项待批准）；部分 `landingSpec` 条目仍为说明性文本。 |
 | A12 | 会话恢复 | 已完成 | `tests/e2e/contract.spec.js:21`「创建 session，刷新后恢复同一 session_id 与服务端状态」；`tests/integration/db-smoke.test.js:84`（opt-in）证明会话落 PostgreSQL。 |
-| A13 | 真实表达 | 已完成（页面侧） | `pageArchitecture()` 只读 `/api/health`、无来源指标不展示；`99.98` / `94.6` 已无命中；#21 清除了 P-02/P-03/P-06/P-08/P-14/P-16 的产品与计数硬编码；页面保留「演示桩 fixture」标注；无「真实交易成功 / 渠道联调成功」提示。 |
+| A13 | 真实表达 | 已完成（页面侧） | `pageArchitecture()` 只读 `/api/health`、无来源指标不展示；`99.98` / `94.6` 已无命中；#21 清除了 P-02/P-03/P-06/P-08/P-14/P-16 的产品与计数硬编码；#25 补了成功态下「无默认 KPI」的独立断言；页面保留「演示桩 fixture」标注。**仍存**：`m-event` 固定文本含虚构「权益暴露 20%」（F-09），属未修复缺陷。 |
 | A14 | 真实模型调用 | 部分完成（真实模型后置） | **八类任务均产生可验证的 fixture 调用与真实证据链**（`tests/unit/fixture-model-client.test.js`、`ai.test.js` 覆盖八类 `task_type` 的引用白名单与证据包，模型名恒为 `fixture-generate-1`，`latency_ms` 落库）；**真实模型调用后置**，本清单不宣称 A14 已满足。 |
 | A15 | 密钥安全 | 已完成 | `scripts/ci/check-secrets.mjs` + `tests/unit/security-check.test.js`（`.env`、`qwen.key`、私钥与模型 API key 模式全部拒绝）；`/api/health` 不返回连接串。 |
 | A16 | AI 异常处理 | 已完成 | `tests/unit/ai.test.js`「AI response is rejected when the session advances during generation」；`tests/e2e` 证据不足与 `ai-error` 路径；模型不可用返回 `DEPENDENCY_UNAVAILABLE` 而非预置答案（`tests/http/app.test.js:36`）。 |
 | A17 | 事实与引用 | 已完成 | `tests/unit/ai.test.js`「AI rejects fabricated prefixed citations」「research generation returns only evidence-backed citations」；模型无法改写数值（`rule matching executes the stored action and ignores model supplied action values`）。 |
 | A18 | 请求一致性 | 部分完成 | `runRealAiTask()` 用 `activeAiRequestToken` 丢弃旧响应、`request_id` 不匹配即抛错（`public/app.js:1304–1346`）；`tests/unit/ai.test.js:69` 覆盖会话推进后拒绝；**超范围转人工状态机的专用用例仍缺**（H-04）。 |
 | A19 | 真实数据参与生成 | 已完成 | 诊断/候选/解释证据包携带 `data_id` / `calculation_id`，`finalizeEvidence()` 嵌入 `portfolio_calculation`（PR#9）；`tests/unit/ai.test.js` 断言引用与证据一致。 |
-| A20 | 知识参与生成 | 部分完成 | 研究/摘要/写作均带 `chunk_id`（`tests/unit/fixture-model-client.test.js`）；`pageReader()` 已展示片段 `title` + 页码 + `source_id`；**研究问答/摘要/写作结果卡片的标题与页码回指仍缺**（§7 A20）。 |
+| A20 | 知识参与生成 | 部分完成 | 研究/摘要/写作均带 `chunk_id`（`tests/unit/fixture-model-client.test.js`）；`pageReader()` 已展示片段 `title` + 页码 + `source_id`；**PR#24 已把引用卡片的标题与页码补上**（§7 A20）。**仍缺**：同时断言标题+页码的 E2E，以及「无知识片段引用」真实空态的独立断言。 |
 | A21 | 真实向量检索 | 部分完成（后置真实 Embedding） | `tests/unit/fixture-vector.test.js`（1536 维确定性向量、Top-1 回归）与 `tests/integration/db-smoke.test.js:57`（pgvector 每条片段有向量，opt-in）；**真实 Embedding API 后置**，W1 为 `fixture-deterministic-1536`。 |
 | A22 | 索引一致与隔离 | 已完成 | 迁移创建 `vector(1536)` + hnsw 索引（`db-smoke.test.js:29`）；模型/知识版本不一致即阻止调用并由 `fixture-parity.test.js` 断言两端一致；客户持仓与回答不写入向量库。 |
 | A23 | AI 规则匹配 | 已完成 | `tests/unit/ai.test.js:23`「rule matching executes the stored action and ignores model supplied action values」；`rule_id` + `rule_version` 精确匹配（#9）。 |
@@ -822,10 +869,200 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 
 ### 13.4 E2E 覆盖仍缺的页面（基线 `5bcb1cc`，15 次运行）
 
+> **已被 §15 取代（基线 `e4d8f49`）**：本节是波次 5 之前的快照，原文保留追溯；现行逐路由三态覆盖、计数与派工一律以 §15 为准。两者冲突时以 §15 为准。
+
 现有 9 个用例只覆盖：页面契约标记与 `/ready`、会话创建与刷新恢复、409 版本冲突、证据不足 422、工作项写入与刷新恢复、未知操作 `not-implemented`、PC 闭环、手机闭环、撤销授权清理。**下列路由没有任何三态用例**：`pc/architecture`、`pc/supply`、`pc/product-fund`、`pc/product-insurance`、`pc/product-wealth`、`pc/product-deposit`、`pc/product-private`、`pc/candidates`、`pc/compare`、`pc/events`、`pc/macro`、`pc/industry`、`pc/library`、`pc/reader`、`pc/writing`、`pc/result`、`m/assistant`（多轮追问）、`m/fund`、`m/insurance`、`m/wealth`、`m/deposit`、`m/private`、`m/allocation`（规则不匹配失败态）、`m/holdings`、`m/candidates`、`m/compare`、`m/companion`、`m/result`。其余路由只在闭环用例的正常路径里被经过（`pc/workspace`、`pc/research`、`m/allocation` 匹配成功路径），**没有任何失败态或空态断言**。
 
 ### 13.5 是否继续后续波次的判断依据（事实，不给结论）
 
 - 若目标是「主链路闭环」（口径 ①）：`9411ead` 上 30 / 30 与 E2E 15 / 15 已绿；`5bcb1cc` 的合并后门禁结论**待编排器确认**，未见新增失败证据。
-- 若目标是「30 页逐页达标」（口径 ②）：仍为 `0 / 30` 页，需按 §13.1–§13.4 补齐三态用例与数据源；**#18 只消除了 A 组的服务端阻塞，未产生任何达标页**。
+- 若目标是「30 页逐页达标」（口径 ②）：仍为 `0 / 30` 页，需按 §13.1–§13.3 与 §15 补齐三态用例与数据源；**#18 只消除了 A 组的服务端阻塞，未产生任何达标页**。基线 `e4d8f49` 的实际覆盖为：完整三态 2 / 30（受控契约响应）、仅成功态 4 / 30、零独立三态 26 / 30，详见 §15.1。
 - E 类（70 QPS、24 小时、多集群、四类任务各 5 次、统一评测集）、C/D 类（承诺书、行内集成、信创、专利）与真实模型 / 真实 Embedding 调用，**无论是否继续波次都不由 W1 判定**（§5.3、§11.1）。
+
+## 14. 状态契约变更批准记录（C-01 / C-02，2026-11-06）
+
+> **批准来源**：用户于 2026-11-06 明确批准下列两项方案，并由编排器会话 `ai_wealth-36` 转达本 Worker。基线为 `origin/main` = `e4d8f49`。本节是**批准记录与实现规格**，不是实现结果；在 §8.3 的 stacked 组落地前，服务端行为仍以现行冻结集合为准，页面不得提前写入。
+>
+> **批准边界**：只批 C-01、C-02 两项。真实数据源接入（保单、合格投资者认定、产品扩展字段、事件/宏观/行业资讯）、W2、真实模型与多轮上下文**均不在本次批准范围**；不得借本次变更搭便车（§6 红线、§8.2 第 4 款）。
+
+### 14.1 C-01：`contactTodo` 从 PATCH 迁到 `record_activity(kind='contact-request')`
+
+**目标**：「联系客户经理」必须产生服务端可见记录（A11），且浏览器不能直接把一个布尔值写成「已联系待办」（A13 真实表达）。
+
+**目标语义（实现规格）**
+
+| 项 | 规格 |
+|---|---|
+| 触发 | `m/private` 的「联系客户经理」按钮；可携带可选 `title`（≤ 200 字符），不得携带客户事实、金额或时间戳 |
+| 接口 | `POST /api/sessions/{id}/commands`，`command="record_activity"`，`input={kind:"contact-request", title?}`；沿用 `expected_version` + UUID `request_id` |
+| 服务端权威 | 服务端生成 `activity_id` / `created_at` / `data_version`，追加到 `state.activities[]`，上限仍为 50；同一 `request_id` 重放返回首次结果，不重复追加 |
+| 成功响应 | `{ session, result:{ status:"APPLIED", activity_id, kind:"contact-request", created_at, data_version }, api_version }`；页面只显示服务端返回值 |
+| `contactTodo` 兼容字段 | 保留在 `defaultSessionState()` 的 36 个 key 中，但**从 PATCH 白名单移除**，改为**读时派生**：`contactTodo = activities.some(a => a.kind === 'contact-request')`。浏览器不可写；旧会话若存有 `true`，读取时以派生值为准（无需 DB 迁移） |
+| 错误 | 通用 PATCH 携带 `contactTodo` → `400 VALIDATION_ERROR`（unknown field）；`kind` 不在白名单 → `400`；`expected_version` 过期 → `409 VERSION_CONFLICT`；`title` 超长 → `400` |
+| 授权语义 | **建议对该 kind 豁免 `assertAuthorized()`**：联系客户经理是客户侧的**服务请求**，不读取持仓/KYC 明细，也不写金额；若沿用「所有命令都要求 authorized」会让未授权客户无法发起联系，与 P-05 的用途冲突。实现时须把豁免限定在 `kind='contact-request'`，**不得放宽其他 kind 或其他命令**（见 §16 待裁决 A） |
+| 撤权清理 | `activities` 已在 `downstreamReset()` 内，撤权即清空；派生 `contactTodo` 随之变 `false`，**不需要把 `contactTodo` 加入 reset**。若业务要求联系请求在撤权后仍保留，它必须脱离 `activities` 单独持久化，属新变更，不在本次批准内 |
+| 页面 | `m/private` 读服务端 `activities` / 派生 `contactTodo`；成功显示 `activity_id` 与时间；失败显示真实错误码；无记录显示「尚未发起联系请求」空态 |
+
+**为什么不是独立命令**：独立命令会把集合从 7 推到 8，而 C-02 也要用掉一个命令名额；本次批准明确「命令 7 不变」，故走既有 `record_activity` + 新 kind。**这也是 A11 与 §8.2「只读优先」的最小写入面**。
+
+### 14.2 C-02：写作草稿持久化（`save_draft` + 服务端权威 `writingDrafts`）
+
+**目标**：P-10 的草稿刷新后可回看（A11），且草稿 id、时间、来源请求都由服务端生成，浏览器不能伪造「已保存」。
+
+**目标语义（实现规格）**
+
+| 项 | 规格 |
+|---|---|
+| 命令 | 新增 `save_draft`（命令集合 7 → 8） |
+| 请求 | `POST /api/sessions/{id}/commands`，`input={ content, source_request_id, title? }`；必须带 `expected_version` 与 UUID `request_id` |
+| 字段约束 | `content` 为字符串，1–20000 字符（与 `lastAnswer.text` 上限一致）；`title` 可选，≤ 200 字符；`source_request_id` 必须是本会话 `ai_requests` 中**真实存在**的 `request_id`（服务端按 `session_id + request_id` 查表校验，**不读浏览器 PATCH 的 `aiRequests` 数组**） |
+| 状态 | `writingDrafts: []`（`defaultSessionState()` 36 → 37）；每项 `{ draft_id, title, content, source_request_id, created_at, updated_at, data_version }`；`draft_id` 由服务端生成（如 `draft-<uuid>`），客户端不得提交 |
+| 上限与幂等 | 每会话最多 20 条；同 `request_id` 重放返回首次结果，不新增；`expected_version` 过期 → `409`；超上限 → `400`（不静默淘汰旧草稿） |
+| 响应 | `{ session, result:{ status:"APPLIED", draft_id, created_at, data_version }, api_version }`；页面用返回值渲染，不自行生成 id/时间 |
+| 错误 | 未授权 → `422 INSUFFICIENT_EVIDENCE`（W1 取「需授权」口径，见 §16 待裁决 B）；`source_request_id` 不存在或不属于本会话 → `400 VALIDATION_ERROR`；`content` 空或超长 → `400`；`writingDrafts` 经 PATCH 写入 → `400` |
+| 撤权清理 | **必须清空**。草稿由 AI 基于授权持仓/研究材料生成，含客户专属内容与引用；撤权后仍可读会违反 A04 的下游失效语义。实现位置：`set_authorization` 撤权分支显式 `writingDrafts: []`（与现有 `diagnosis` / `lastAnswer` / `researchAnswer` 同处），**不加入 `downstreamReset()`**，以免 `generate_allocation` 或目标变更误清用户草稿（分析见 §14.4） |
+| 目标变更 | 不清空草稿；草稿是带 `created_at` 的历史产物，不声称代表当前目标。若产品要求「目标变更即作废旧草稿」，需另行批准 |
+| 页面 | `pc/writing` 读取 `writingDrafts`：成功显示草稿 id/时间/来源请求；失败显示真实错误；空态「暂无已保存草稿」；刷新后仍在 |
+
+### 14.3 冻结集合前后值（唯一权威表）
+
+| 集合 | 变更前（`e4d8f49`） | C-01 后 | C-02 后（两项合并） | 说明 |
+|---|---|---|---|---|
+| `SESSION_PATCH_FIELDS` | **19** | **18**（移除 `contactTodo`） | **18**（不扩大） | `writingDrafts` 只能经 `save_draft` 写入，不进 PATCH |
+| `ACTIVITY_KINDS` | **14** | **15**（新增 `contact-request`） | **15** | 仅新增一类；上限 50 不变 |
+| `SESSION_COMMANDS` | **7** | **7** | **8**（新增 `save_draft`） | C-01 复用 `record_activity` |
+| `defaultSessionState()` key | **36** | **36**（`contactTodo` 保留为只读派生字段） | **37**（新增 `writingDrafts`） | `contactTodo` 不删 key，避免旧会话读不到；改为不可写 |
+| `downstreamReset()` key | **11** | **11** | **11** | C-02 的撤权清理走 `set_authorization` 显式清空，不扩 reset（见 §14.4） |
+| `AI 结果投影` | 5 类（`lastAnswer`、`researchAnswer`、`diagnosis`、`ruleMatch`、`aiRequests`） | 不变 | 不变 | 草稿是独立服务端对象，不是浏览器投影 |
+
+> **一致性要求**：`docs/api-contract.md`、`tests/unit/session-contract.test.js`、`tests/unit/activities.test.js` 与上表必须逐数字一致；`tests/unit/session-contract.test.js` 的测试标题也须同步（如「19 fields」→「18 fields」、「36 keys」→「37 keys」、「7 commands」→「8 commands」）。**测试标题与实际断言不一致本身即视为未完成**。
+
+### 14.4 撤权清理与 `downstreamReset` 分析（安全语义不得省略）
+
+| 变更 | 是否必须同步撤权清理 | 结论与理由 |
+|---|---|---|
+| C-01 `contact-request` | 是，但**不改 `downstreamReset`** | `activities` 已在 `downstreamReset()` 的 11 个 key 内；`contactTodo` 改为读时派生后，撤权清空 `activities` 即让 `contactTodo=false`。若把 `contactTodo` 单独留在 reset 外并保持可写，撤权后可继续显示「已联系客户经理」，属伪造服务状态，**禁止**。 |
+| C-02 `writingDrafts` | **是，必须显式清空** | 草稿含客户专属内容与引用，属「基于授权数据的下游产物」。撤权后仍可读会让已撤销授权的客户数据继续可见，违反 A04 与 §6 红线。**不能**因为「草稿是用户自己写的」就豁免：草稿正文由 `writing_draft` 生成，含持仓/研究材料。 |
+| 为什么不是 `11 → 12` | —— | `downstreamReset()` 同时被「目标变更」与「重新生成方案」调用。把 `writingDrafts` 放进去会在用户仅调整目标或重新生成配置时**误删历史草稿**，这不是安全要求，而是可用性回归。因此把清理放在 `set_authorization` 的撤权分支，与 `diagnosis` / `lastAnswer` / `researchAnswer` 的既有显式清理同处；`downstreamReset` 保持 11，断言仍锁 11。 |
+| 测试必须覆盖 | —— | ① 撤权后 `writingDrafts=[]`（新增单测 + E2E）；② 撤权后 `contactTodo` 派生为 `false`（E2E）；③ 目标变更后 `writingDrafts` **仍在**（防止实现者图省事塞进 reset）；④ 重新生成方案后草稿仍在。四条缺一不可。 |
+| 其他下游 | 不变 | `plan` / `candidates` / `compareSet` / `compareSaved` / `careSubmitted` / `remindCreated` / `researchUsedInCandidates` / `selectPoolSynced` / `ruleMatch` / `candidateCalculation` / `activities` 的既有清理语义不变。 |
+
+### 14.5 不在本次批准范围（明确排除，防止搭便车）
+
+1. **多轮对话上下文持久化**（H-05）：需要新增会话字段或命令，属新契约变更，未批准。
+2. **候选独立可复算 `score`**（H-02/P-16）：属服务端 `candidateCalculation` 字段扩展 + 前端消费，未批准。
+3. **真实数据源**：保单表、`customer.qualified` 认定来源、产品净值序列/规模/持仓分布/管理人、事件/宏观/行业资讯——均属 W2 或数据波次，**本次不启动**（§15.5 明确其页面只能做受控响应三态或真实无来源空态）。
+4. **真实模型与真实 Embedding**：仍为 `AI_MODE=fixture`，草稿与引用的内容质量不由 W1 判定。
+5. **`downstreamReset` 扩容到 12**：本记录明确不需要；若实现者认为必须，须回到 §8.1 重新批准。
+
+## 15. 30 / 30 运行路由 × 成功 / 失败 / 空态覆盖矩阵（基线 `e4d8f49`）
+
+> **矩阵口径**：S = 成功态、F = 失败态、E = 空态。每个格只认**该页面自身的独立断言**；「主链路用例经过该页」不算三态覆盖（用户明确要求不得以主链路代替）。「受控契约」表示用 `page.route` 注入服务端真实结构的响应；「真实空态」表示不改响应、由真实无来源/无数据触发。
+>
+> **允许的做法**：缺真实数据源的页面，可用**受控契约响应**验证 UI 三态，并用**真实无来源**验证空态；**不得**因此宣称真实业务数据验收通过（§15.5）。
+>
+> **不允许的做法**：为了让测试变绿而删断言、放宽断言、把失败态改成成功态、用 `test.fixme`/`skip` 掩盖生产缺陷；发现生产缺陷一律记入 §15.3 修复项，测试保持对**目标行为**的断言。
+
+### 15.1 覆盖计数（按 main `e4d8f49` 代码事实重算）
+
+| 口径 | 数量 | 路由 |
+|---|---|---|
+| 运行路由总数 | **30** | 18 PC + 12 手机（`pc/result`、`m/result` 各算 1） |
+| 成功态具备独立断言（含下列三态齐备的 2 页） | **4 / 30** | `pc/architecture`（P-01）、`m/holdings`（P-15）、`pc/product-deposit`、`m/deposit`（P-04） |
+| 其中：三态都具备独立断言 | **2 / 30** | `pc/product-deposit`、`m/deposit`（`three-state.spec.js`，受控契约响应 + 真实快照空态） |
+| 失败态具备独立断言 | **2 / 30** | `pc/product-deposit`、`m/deposit`（400 契约错误） |
+| 空态具备独立断言 | **2 / 30** | `pc/product-deposit`、`m/deposit`（快照无挂牌利率） |
+| 零独立三态断言 | **26 / 30** | 其余全部：**11 条只在闭环/工作项用例的正常路径被经过** + **15 条从未被任何 E2E 打开** |
+| 仅主链路经过（不算三态） | **11 / 30** | `pc/candidates`、`pc/compare`、`pc/research`、`pc/result`、`m/assistant`、`m/fund`、`m/allocation`、`m/candidates`、`m/compare`、`m/companion`、`m/result` |
+| 从未被任何 E2E 打开 | **15 / 30** | `pc/workspace`、`pc/product-fund`、`pc/product-insurance`、`pc/product-wealth`、`pc/product-private`、`pc/supply`、`pc/events`、`pc/macro`、`pc/industry`、`pc/library`、`pc/reader`、`pc/writing`、`m/insurance`、`m/wealth`、`m/private` |
+| 真实业务数据验收达标 | **0 / 30** | 受控契约响应只证明 UI 与服务端契约的映射，不构成真实数据验收 |
+
+> 核对：4（成功独立）+ 26（零三态）= 30；26 = 11（主链路）+ 15（从未打开）。逐行以 §15.2 的「当前覆盖」列为准。
+
+### 15.2 逐路由矩阵
+
+| # | 路由 | 当前覆盖（S / F / E） | 目标可见行为（S / F / E） | 服务端接口 / 状态 | 所需生产修复 | 测试归属 | 缺真实数据源 |
+|---|---|---|---|---|---|---|---|
+| 1 | `pc/architecture` | S：有（独立，受控契约）；F：无；E：无 | S：`api_version`、`dependencies` 就绪状态、`AI_MODE=fixture` 可见，无默认 KPI；F：`/api/health` 不可达 → 「共享应用服务未连接」，不显示默认数字；E：无待处理事项 → 「当前无待处理事项」 | `GET /api/health`（`dependencies.*`）；`GET /ready`（7 项 checks，**页面尚未消费**） | F-10：消费 `/ready` 并补 F/E 渲染 | `test-e2e`（三态）+ `test-unit`（health 结构） | 否 |
+| 2 | `pc/workspace` | S：无（从未打开）；F：无；E：无 | S：`researchAnswer` 卡片 + `activities[]` 记录；F：会话/数据加载失败 →「共享数据加载失败」；E：无最近使用/无提醒 → 显式空态 | `GET /api/demo-data`、`GET /api/sessions/:id`、`record_activity` | 无（#24 已收口）；仅补断言 | `test-e2e` | 否 |
+| 3 | `pc/product-fund` | S：无；F：无；E：无 | S：产品卡片/费率/近一年收益/回撤/可售/来源/时点来自 `products[]`；F：`GET /api/demo-data` 失败 →「共享数据加载失败」+错误码；E：近三年/成立以来无序列 →「该区间暂无数据」 | `GET /api/demo-data`；`POST /api/ai/generate`（`product_explain`） | 无生产缺陷；三态断言待补 | `test-e2e` | **是**（净值序列、规模、持仓与行业分布、基金经理、费率结构） |
+| 4 | `pc/product-insurance` | S：无；F：无；E：无 | S：产品行/事实/可售状态来自快照；F：快照失败 → 共享数据加载失败；E：保单板块无来源 →「未授权或暂无可展示保单」 | `GET /api/demo-data`；只读 `insurance_coverage` 投影 | 无生产缺陷；三态断言待补 | `test-e2e` | **是**（保单/理赔记录） |
+| 5 | `pc/product-wealth` | S：无；F：无；E：无 | S：产品行/可售状态来自快照；F：快照失败；E：管理人字段/审计信息无来源 →「暂未由服务端提供的字段」 | `GET /api/demo-data` | 无生产缺陷 | `test-e2e` | **是**（管理人注册资本/在管规模/审计） |
+| 6 | `pc/product-deposit` | **S/F/E：全有**（独立断言，受控契约 + 真实空态） | S：本息/利息/公式/`calculation_id`/规则版本来自端点；F：400 →「服务端错误 VALIDATION_ERROR」+消息，不显示金额；E：快照无挂牌利率 →「该期限暂无挂牌利率」 | `GET /api/demo-data`；`GET /api/calculations/deposit` | F-04：本金/期限仍固定 500000/3 年，逐期限空态未实现；真库端到端页面成功态未跑 | `test-e2e` + `test-unit`（单位矩阵） | 否 |
+| 7 | `pc/product-private` | S：无；F：无；E：无 | S：`qualified_status=QUALIFIED` → 展示 `restricted_products` 事实；F：未认定/投影不可用 → 明确拒绝，不返回部分内容；E：无受限产品 →「当前无受限产品」 | `readonly_projections.qualified_status`（`GET /api/demo-data` 或独立只读响应）；`GET /api/demo-data` | F-05：页面整页受限、完全未消费投影 | `test-e2e` | **是**（`customer.qualified` 认定来源） |
+| 8 | `pc/candidates` | S：仅主链路（生成后状态检查）；F：无；E：无 | S：候选行 + `reasons[]`/`constraints`/`holding_months`；F：`generate_candidates` 409/422 → `action-error` 真实错误；E：无候选 → 引导空态（去配置页） | 命令 `generate_candidates`；`candidateCalculation`；`POST /api/ai/generate`（`candidate_explain`） | F-08b：无独立可复算 `score`；F/E 断言待补 | `test-e2e` + `test-unit`（候选计算） | 否 |
+| 9 | `pc/compare` | S：仅主链路（保存）；F：无；E：无 | S：表格 + `comparable`/`incomparable_reason`/`comparison_basis`；F：`save_comparison` 400/409 → 真实错误；E：比较集为空 → 引导空态 | 命令 `save_comparison`；`PATCH compareSet`；`GET /api/demo-data` | 无（#24 已消费口径）；F/E 断言待补 | `test-e2e` + `test-unit`（2–3 个边界） | 否 |
+| 10 | `pc/supply` | S：无；F：无；E：无 | S：产品行作为供给单元，带 `product:<id>`/来源/时点/可售；F：快照失败 →「供给目录加载失败」；E：资讯/策略/行业无来源 →「当前分类暂无已审核供给」 | `GET /api/demo-data`；`record_activity`（`new-supply`） | 无生产缺陷 | `test-e2e` | **是**（资讯/策略/行业观点供给） |
+| 11 | `pc/research` | S：仅主链路；F：无；E：无 | S：`researchAnswer` + 引用（标题+页码）+ 时延/模型；F：422/503 → `ai-error` 或超范围拒答；E：空问题 → `prompt-needed` | `POST /api/ai/generate`（`research_qa`） | 无（#24 已补提示/拒答）；F/E 断言待补 | `test-e2e` + `test-unit`（引用白名单） | 否 |
+| 12 | `pc/events` | S：无；F：无；E：无 | S：有事件片段时按知识片段渲染并标时点；F：`GET /api/knowledge` 失败 → 真实错误；E：无事件片段 →「暂无可引用材料」 | `GET /api/knowledge`；`research_qa`（`events` 片段缺失） | 无（空态为真实结果） | `test-e2e` | **是**（事件源/片段） |
+| 13 | `pc/macro` | S：无；F：无；E：无 | S：有宏观指标时渲染指标+时点；F：知识/数据接口失败；E：无指标序列 → 空态 | `GET /api/knowledge`；`research_qa` | 无（当前无指标来源，空态正确） | `test-e2e` | **是**（宏观 8 指标序列） |
+| 14 | `pc/industry` | S：无；F：无；E：无 | S：有行业片段时渲染；F：接口失败；E：无片段 → 空态 | `GET /api/knowledge`；`research_qa` | 无 | `test-e2e` | **是**（行业数据/研报） |
+| 15 | `pc/library` | S：无；F：无；E：无 | S：产品卡片 + `knowledge_version` + 片段数；F：`/api/demo-data` 或 `/api/knowledge` 失败 →「共享数据加载失败」；E：无知识版本 →「暂无已发布产品知识」 | `GET /api/demo-data`；`GET /api/knowledge` | 无生产缺陷 | `test-e2e` | **部分**（观点资产/审核状态） |
+| 16 | `pc/reader` | S：无；F：无；E：无 | S：文档/片段 `title`+`page`+`source_id`，摘要带 `document_id`；F：422/400 → 真实错误；E：无 ACTIVE 知识 →「暂无已发布报告」 | `GET /api/knowledge`；`POST /api/ai/generate`（`report_summary`） | 无生产缺陷（#24 已补页码） | `test-e2e` + `test-unit`（缺 `document_id` 拒绝） | 否（扫描件 OCR 后置） |
+| 17 | `pc/writing` | S：无；F：无；E：无 | S：草稿保存后显示服务端 `draft_id`/时间/来源请求，刷新可回看；F：`save_draft` 400/409/422 → 真实错误；E：无草稿 →「暂无已保存草稿」 | 命令 `save_draft`（C-02，待实现）；`writing_draft` | F-06：草稿不持久（C-02 未落地） | `test-e2e` + `test-unit`（新增 writing-drafts） | 否 |
+| 18 | `pc/result` | S：仅主链路（保存后 landing）；F：无；E：无 | S：只显示服务端 `activities[]`/`aiResult` 记录；F：`action-error` 真实错误码；E：`not-implemented` / 「尚未写入服务端记录」 | `record_activity`；`landingSpec` | 无（#24 已清理）；F/E 断言待补 | `test-e2e` | 否 |
+| 19 | `m/assistant` | S：仅主链路；F：无；E：无 | S：`assistant_qa` 回答 + 引用 + fixture 标注；F：422/503 → `ai-error`；E：空问题 → `prompt-needed` | `POST /api/ai/generate`（`assistant_qa`）；`lastAnswer` | F-07：多轮上下文仅 `lastAnswer` 单槽（需新契约，未批准） | `test-e2e` | 否 |
+| 20 | `m/fund` | S：仅主链路（work-items 的 `mobile-search`）；F：无；E：无 | S：列表与产品事实来自 `products[]`；F：无持仓诊断 422 →「当前客户无该产品持仓，无法生成诊断」；E：分类无产品 →「该分类暂无产品」 | `GET /api/demo-data`；`POST /api/ai/generate`（`diagnosis_explain`） | F-02：422 专用文案不可达（`runRealAiTask` 吞错）；F-08a：列表仍 4 条硬编码 | `test-e2e` | 否 |
+| 21 | `m/insurance` | S：无；F：无；E：无 | S：按被点击产品渲染保险事实（非保单）+ 可售/来源；F：`insurance_coverage` 不可用 → 真实错误/未授权；E：无保单来源 →「未授权或暂无可展示保单」 | `GET /api/demo-data`；`readonly_projections.insurance_coverage` | F-03：`m-policy` 无页面入口；保障缺口/覆盖度仍无计算来源 | `test-e2e` | **是**（保单/缺口/待办） |
+| 22 | `m/wealth` | S：无；F：无；E：无 | S：产品卡 + `sale_status` 徽章；F：快照失败 → 共享数据加载失败；E：分类无产品 →「当前视图暂无产品」 | `GET /api/demo-data` | 无生产缺陷 | `test-e2e` | 否 |
+| 23 | `m/deposit` | **S/F/E：全有**（独立断言） | S：本息/利息/`calculation_id` 来自端点；F：400 → 真实错误、不显示金额；E：无挂牌利率 →「该期限暂无挂牌利率」 | `GET /api/demo-data`；`GET /api/calculations/deposit` | F-04：本金/期限固定；真库端到端未跑 | `test-e2e` | 否 |
+| 24 | `m/private` | S：无；F：无；E：无 | S：已认定 → `restricted_products`；F：未认定 → 明确拒绝；E：无受限产品 →「当前无受限产品」；联系成功显示 `activity_id` | `qualified_status`；命令 `record_activity(contact-request)`（C-01，待实现） | F-05 + C-01：页面未消费投影、`m-contact` 仍 PATCH | `test-e2e` + `test-unit`（activities） | **是**（认定来源） |
+| 25 | `m/allocation` | S：仅主链路（正常生成 + 撤权）；F：无；E：无 | S：`MATCHED` → 方案+候选；F：`UNSUPPORTED_RULE` →「没有匹配的配置规则」独立页，不覆盖旧方案；E：缺字段 → `NEED_CONFIRMATION` 且文案对应 `missing_fields` | `POST /api/ai/generate`（`rule_match`）；命令 `generate_allocation`、`generate_candidates`、`set_authorization` | F-01：`flow.js` 对所有非 `MATCHED` 都开 `rule-confirmation`，`rule-unsupported` 页面不可达；`NEED_CONFIRMATION` 仍不可达 | `test-e2e` + `test-unit`（三类状态映射） | 否 |
+| 26 | `m/holdings` | S：有（独立）；F：无；E：无 | S：双分母集中度 + `estimated` 收益 + `calculation_id`；F：400/503 →「服务端计算失败」+错误码；E：`available=false` →「暂无持仓/未授权」，不显示 0 元 | `GET /api/calculations/portfolio` | 无生产缺陷；F/E 断言待补 | `test-e2e` + `test-unit`（复算） | 否 |
+| 27 | `m/candidates` | S：仅主链路；F：无；E：无 | S：排序/约束取 `reasons[]`；F：`candidate_explain` 422 → 真实错误；E：无候选 → 引导空态 | 命令 `generate_candidates`；`candidateCalculation`；`candidate_explain` | F-08b：`score` 缺失；F/E 断言待补 | `test-e2e` | 否 |
+| 28 | `m/compare` | S：仅主链路；F：无；E：无 | S：表格 + 不可排名说明；F：`save_comparison` 400/409；E：比较集空 → 空态 | 命令 `save_comparison`；`PATCH compareSet` | 无（#24 已消费可比性） | `test-e2e` | 否 |
+| 29 | `m/companion` | S：仅主链路；F：无；E：无 | S：复盘数字来自持仓投影并标「估算」；F：`submit_care` 409 →「请先保存有效产品比较」；E：无方案 →「尚未关联配置方案」 | `GET /api/calculations/portfolio`；命令 `submit_care`、`create_reminder` | F-09：目标完成度无服务端字段；`m-event` 仍为固定文本（含虚构「权益暴露 20%」） | `test-e2e` + `test-unit`（409） | **部分**（目标完成度/事件） |
+| 30 | `m/result` | S：仅主链路；F：无；E：无 | S：服务端记录或 `aiResult`；F：`action-error`；E：`not-implemented` | `record_activity`；`landingSpec` | 无 | `test-e2e` | 否 |
+
+**矩阵合计核对**：30 行覆盖 18 PC + 12 手机。按「缺真实数据源」列统计：**「是」10 行**（`pc/product-fund`、`pc/product-insurance`、`pc/product-wealth`、`pc/product-private`、`pc/supply`、`pc/events`、`pc/macro`、`pc/industry`、`m/insurance`、`m/private`）、**「部分」2 行**（`pc/library`、`m/companion`）、**「否」18 行**。**这与「30 页都可做受控响应三态」并不矛盾**：缺数据源的页面仍可用受控契约响应验证 UI 与服务端契约，但真实业务数据验收为 **0 / 30**。
+
+### 15.3 生产缺陷 / 修复项（发现即登记，测试不得弱化）
+
+| 编号 | 页面 | 缺陷（代码事实） | 必须的修复 | Owner |
+|---|---|---|---|---|
+| F-01 | `m/allocation` | `public/actions/flow.js` 的 `m-generate-allocation` 对 `result.status !== 'MATCHED'` 一律 `openLanding('rule-confirmation')`；`public/app.js:1084` 的 `rule-unsupported` 规格没有任何调用方，属死代码。H-06 的「规则不匹配独立失败页」实际不可达 | 按 `result.status` 分支：`UNSUPPORTED_RULE` → `rule-unsupported`，`NEED_CONFIRMATION` → `rule-confirmation`；并补 E2E | `frontend-flow` |
+| F-02 | `m/fund` | `runRealAiTask()`（`public/app.js`）自行 `catch` 所有错误并统一 `openLanding('ai-error')`，P-12 的「当前客户无该产品持仓，无法生成诊断」分支不可达（#20 已在 PR 描述中登记） | 把真实 `error.code` 下推给调用方或让 `diagnosis` 分支自行渲染 422 专用失败态；不得改成通用成功 | `frontend-lead` |
+| F-03 | `m/insurance` | `m-policy` 动作已在 `diagnosis.js` 注册，但 `public/app.js` 内**没有任何元素带 `data-action="m-policy"`**；保障缺口/覆盖度仍无计算来源 | 提供可见入口并接 `insurance_coverage`；缺口无来源时显式空态（不得回填 72% / ¥4,000,000） | `frontend-lead`（+`data` 数据源） |
+| F-04 | `pc/product-deposit`、`m/deposit` | 测算输入固定为 500000 / 3 年；逐期限「该期限暂无挂牌利率」分支未实现；真库页面成功态未做过一次端到端 | 期限/本金可选、逐期限空态；在真库跑一次页面成功态并留证 | `frontend-lead` |
+| F-05 | `pc/product-private`、`m/private` | 两页仍整页受限；`qualifiedStatus` / `restrictedProducts` 只存在于只读投影，页面从未消费（`grep qualified` 仅命中 `public/demo-data.js` 的本地默认态） | 消费 `qualified_status` / `restricted_products`；三态（已认定/未认定/无受限产品）；`contactTodo` 改 C-01 | `frontend-lead`（+`data` 认定来源） |
+| F-06 | `pc/writing` | 无 `writingDrafts`、无 `save_draft`；草稿只在结果页显示，回页即消失 | 按 C-02 落地 | `contract` + `frontend-lead` + `test-unit` |
+| F-07 | `m/assistant` | 多轮上下文只有 `lastAnswer` 单槽；无服务端上下文/澄清状态 | 需新增契约（未批准），见 §16-A | `contract`（待批准） |
+| F-08a | `m/fund` | 列表仍为前端 4 条硬编码，`product_id` 无法从服务端映射 | 列表改 `GET /api/demo-data`；不可诊断产品标「无持仓不可诊断」或禁用 | `frontend-lead` |
+| F-08b | `pc/candidates`、`m/candidates` | `candidateCalculation` 无独立可复算 `score`；前端以 `reasons[]` 顺序代替排序值 | 服务端产出 `score` 并由页面消费 | `backend` + `frontend-lead` |
+| F-09 | `m/companion` | `m-event` 仍为固定文本「A500 本周波动上升 / 权益暴露 20%」，属虚构事实（A13）；「目标完成度」无服务端字段 | 事件内容改知识片段驱动或改显式空态；不得保留虚构数字 | `frontend-flow`（+`backend`） |
+| F-10 | `pc/architecture` | 页面只读 `/api/health` 的 `dependencies`，未消费 `GET /ready` 的 7 项 checks；失败态与「无待处理事项」空态无断言 | 消费 `/ready`；补 F/E 三态 | `frontend-lead` |
+| F-11 | `pc/reader` | 阅读器展示页码/标题，但「摘要必须带 `document_id`」的实现需复核 `readerDocumentRef()` 是否在各入口都取到 `doc-*`（#24 只改了引用展示） | 复核并补 `document_id` 缺失时的 400 失败态断言 | `frontend-lead` |
+| F-00（已修复） | `pc/product-deposit` | 目录加载完成后未重渲染、区间事实空值未守卫（#26 修复） | 已由 #26 修复；#27 三态用例为回归证据 | `frontend-lead`（已完成） |
+
+> **红线**：上表缺陷**不得**通过删断言、放宽断言、改成功态或 `skip` 规避。任一缺陷未修复时，对应三态用例应保持对目标行为的断言并红，直至修复项合并。**优先修复再补断言**，避免把「当前错误行为」固化成验收基线。
+
+### 15.4 三态用例的编写与派工规则
+
+1. **每页三条独立断言**：成功、失败、空态各至少一条，断言**页面可见文本**（`toContainText` / `toBeVisible`），不断言内部变量；同一测试内循环多个页面时，必须对每个页面分别断言，不得只断言最后一个。
+2. **失败态必须由真实错误驱动**：`400 VALIDATION_ERROR`、`409 VERSION_CONFLICT`、`422 INSUFFICIENT_EVIDENCE`、`503 DEPENDENCY_UNAVAILABLE`、`404 NOT_FOUND`；用 `page.route` 注入**服务端真实结构**的错误体（`{ error:{ code,message,details? }, request_id }`），不得在浏览器里伪造 `promptError`。
+3. **空态优先用真实无来源**：能通过真实快照缺字段/无数据触发的，不要注入；不能的（如保单、认定状态、目标完成度）用受控契约响应，并在用例注释标明「受控契约，不是真实业务数据」。
+4. **三态独立成 spec 组织**：按路由分组（`test.describe('P-xx 路由')`），每态一个 `test` 或一组按页面循环且逐页断言的 `test`；文件名建议 `tests/e2e/three-state-<route>.spec.js` 或并入现有 `three-state.spec.js`，由 `test-e2e` owner 决定。
+5. **归属**：页面三态 → `test-e2e`；命令幂等/校验/撤权 → `test-unit`；带 DB 的会话持久化 → `test-db`；文档/契约表 → `docs`；契约实现 → `contract`；数据源 → `data`。**不得跨 owner 提交**（§8.3）。
+6. **验证入口**：`npm run test:e2e` 必须是 30 页三态的最终判据；`three-state.spec.js` 现有 5 个用例是起点，不是完成态。
+
+### 15.5 验收边界（必须与真实数据验收区分）
+
+- **受控契约响应**：证明「页面在服务端返回该结构时的三态映射正确」，属**UI 契约验证**，不是真实业务数据验收，也不是真实模型结论。
+- **真实无来源空态**：证明「服务端没有该数据时页面不伪造」，属**真实空态验证**，可作为该页空态的验收证据。
+- **真实业务数据验收**：需要真实数据源（保单、认定、产品扩展字段、事件/宏观/行业、目标完成度等）且由行方口径判定；本次**0 / 30**，W2/数据波次启动后另行验收。
+- 所有页面继续保留「演示桩 fixture / 演示数据，不构成投资建议」标注；不得把受控响应写成真实客户数据或生产结论。
+
+## 16. 仍需裁决事项（供 orchestrator / 用户确认）
+
+> 下列事项**不在**本次已批准的 C-01 / C-02 范围内；未确认前不得实现。除此之外，C-01 / C-02 的集合前后值与撤权语义已在 §14 定稿，**无其他阻塞项**。
+
+| 编号 | 待裁决事项 | 本文建议 | 影响 |
+|---|---|---|---|
+| A | **`record_activity(kind='contact-request')` 是否豁免 `assertAuthorized()`** | 建议豁免：联系客户经理是客户侧服务请求，不读持仓/KYC 明细；否则未授权客户无法发起联系，与 P-05 的用途冲突。豁免必须只限该 kind | 影响 C-01 的授权前置与 error 语义（`frontend-flow` / `contract`） |
+| B | **`save_draft` 是否要求 `authorized=true`** | 建议 W1 要求授权（与其他业务命令一致），未授权返回 `422`；若产品要求未授权也能写作，需新增只读草稿来源，属新变更 | 影响 C-02 的错误码与 P-10 的未授权体验 |
+| C | **`writingDrafts` 是否在目标变更时也清空** | 建议**不清空**（仅撤权清空），避免用户调整目标就丢草稿；本文已按此写入 §14.4 | 若要求清空，需把 `writingDrafts` 加入 `downstreamReset`，集合 11 → 12，须重新批准 |
+| D | **H-05 多轮上下文持久化** | 需要新增会话字段（如 `conversation`）或命令，属新契约变更；建议单独立项，不与 C-01/C-02 捆绑 | `m/assistant` 的 A14b 验收；影响 36 → 38 |
+| E | **候选独立 `score`** | 建议 `backend` 在 `candidateCalculation` 增字段，前端消费；不改会话集合 | H-02/P-16 的「排序可复算」验收 |
+| F | **真实数据源是否启动（W2/数据波次）** | 本次不启动；P-02/P-03/P-05/P-07/P-13/P-17 的真实数据验收依赖它 | 决定 §15 中 12 个「缺数据源」页面能否从受控三态升到真实验收 |
+
+> 若上述 A–F 均按建议执行，C-01 / C-02 的落地不再需要额外裁决；若任一项被否决或修改，须先更新本节与 §14，再进入 §8.3 的实现序列。

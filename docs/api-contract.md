@@ -67,7 +67,7 @@ Content-Type: application/json
 
 ## 共享会话状态契约（W1 冻结，2026-11-05）
 
-`defaultSessionState()` 的 36 个 key 按写入途径分三类。本节表格与 `tests/unit/session-contract.test.js` 的期望集合互为锁定：**任何白名单、命令、状态形状或清理规则的变更，必须在同一 PR 内同时改代码、本表与该测试**，否则 CI 拒绝。
+`defaultSessionState()` 的 36 个 key 按写入途径分三类。本节表格与 `tests/unit/session-contract.test.js` 的期望集合互为锁定：**任何白名单、命令、状态形状或清理规则的变更，必须由同一变更编号的一组 stacked PR 同时改代码、本表与该测试，并在该组最后一个 head 上组合验证**；不得由单一 PR 跨 `docs/`、`src/`、`tests/` 三个 owner（`ci-ownership` 会拒绝），也不得用 label 或改 ownership 规则绕过。分组与顺序见 `docs/w1-pending-features.md` §8.3。
 
 | 类别 | 字段 | 写入途径 | 校验 | 撤权清理 | 刷新恢复 |
 |---|---|---|---|---|---|
@@ -81,7 +81,9 @@ Content-Type: application/json
 
 **生命周期**：会话落 `app_sessions`，`status='ACTIVE'`，`expires_at = NOW() + INTERVAL '12 hours'`；浏览器只保存 `session_id`（localStorage `wealth-demo-session-id`），业务状态全部由服务端会话提供，刷新后按 `session_id` 恢复；版本过期返回 `409 VERSION_CONFLICT`，同一 `request_id` 重放返回首次结果且不推进状态。
 
-**契约冻结判定**：`tests/unit/session-contract.test.js` 锁定 19 个 PATCH 字段、7 个命令、36 个状态 key、11 个 `downstreamReset` key，以及服务端权威字段不可经 PATCH 写入。改动这些集合必须同步改本表，视为契约变更，需走 PR 与 `ci-merge-gate`。
+**契约冻结判定**：`tests/unit/session-contract.test.js` 锁定 19 个 PATCH 字段、7 个命令、36 个状态 key、11 个 `downstreamReset` key，以及服务端权威字段不可经 PATCH 写入。改动这些集合必须同步改本表，视为契约变更，需走 PR 与 `ci-merge-gate`；**「同步」的落地形态是同一变更编号的 stacked PR 组（见上）**。
+
+> **待实现变更预告**：下文「已批准的状态契约变更（C-01 / C-02）」已获用户批准，但**截至 `e4d8f49` 尚未实现**；实现前，本节 36 / 19 / 7 / 11 的现行语义仍是唯一有效的服务端行为，页面不得提前按新契约写入。
 
 ## 只读计算与派生投影（W1 波次 3）
 
@@ -240,7 +242,61 @@ Content-Type: application/json
 | 11 个 `downstreamReset` key | **不改** | 无写入即无失效级联 |
 | 14 类 `record_activity` kind | **不改** | 本节不写 `activities` |
 
-凡将来需要把上述任一派生值落成会话状态（例如把认定状态或草稿写入会话），仍按 `docs/w1-pending-features.md` §8 流程先取得状态契约 owner 批准，并在同一 PR 内同时改本表与 `tests/unit/session-contract.test.js`。
+凡将来需要把上述任一派生值落成会话状态（例如把认定状态或草稿写入会话），仍按 `docs/w1-pending-features.md` §8 流程先取得状态契约 owner 批准，并由同一变更编号的 stacked PR 组同时改本表与 `tests/unit/session-contract.test.js`。
+
+## 已批准的状态契约变更（C-01 / C-02，待实现）
+
+> **状态**：2026-11-06 用户批准；截至 `e4d8f49` **尚未实现**。本节描述的是**目标契约**，不是当前服务端行为；实现按 `docs/w1-pending-features.md` §8.3 的 stacked PR 顺序进行（docs → contract → test-unit → frontend → test-e2e）。在实现合并前，任何页面/客户端不得按本节写入，服务端仍按上文「W1 冻结」的 36 / 19 / 7 / 11 行为校验。
+
+### C-01 `contactTodo` 迁移到 `record_activity(kind="contact-request")`
+
+- `SESSION_PATCH_FIELDS`：**19 → 18**（移除 `contactTodo`）。浏览器通过通用 PATCH 提交 `contactTodo` → `400 VALIDATION_ERROR`（unknown field）。
+- `record_activity` 的 `ACTIVITY_KINDS`：**14 → 15**，新增 `contact-request`。请求：
+  ```http
+  POST /api/sessions/{session_id}/commands
+  {
+    "expected_version": 3,
+    "request_id": "uuid",
+    "command": "record_activity",
+    "input": { "kind": "contact-request", "title": "可选，≤200 字符" }
+  }
+  ```
+  服务端生成 `activity_id` / `created_at` / `data_version` 并追加 `state.activities[]`（上限仍 50）；同一 `request_id` 重放返回首次结果，不重复追加。
+- `contactTodo` 保留为**只读兼容字段**：仍在 `defaultSessionState()` 的 36 个 key 中，但读时派生 `contactTodo = activities.some(a => a.kind === "contact-request")`；客户端不可写，旧会话的存量值以派生值为准。
+- **授权前置**：`kind="contact-request"` 计划豁免 `assertAuthorized()`（客户侧服务请求，不读取持仓/KYC 明细）；豁免仅限该 kind。**该豁免待 §16-A 最终确认**，确认前实现方不得自行放宽其他命令。
+- **撤权清理**：`activities` 已在 `downstreamReset()` 内，撤权即清空；派生 `contactTodo` 随之为 `false`。不新增 reset key。
+- 命令集合不变：**7 → 7**。
+
+### C-02 写作草稿持久化（`save_draft` + `writingDrafts`）
+
+- `SESSION_COMMANDS`：**7 → 8**，新增 `save_draft`。
+- `defaultSessionState()`：**36 → 37**，新增 `writingDrafts: []`；每项 `{ draft_id, title, content, source_request_id, created_at, updated_at, data_version }`，`draft_id` 由服务端生成。
+- `SESSION_PATCH_FIELDS`：**不扩大**（C-01 后保持 18）；`writingDrafts` 经通用 PATCH 写入 → `400`。
+- 请求：
+  ```http
+  POST /api/sessions/{session_id}/commands
+  {
+    "expected_version": 4,
+    "request_id": "uuid",
+    "command": "save_draft",
+    "input": { "content": "草稿正文，1–20000 字符", "source_request_id": "uuid", "title": "可选，≤200 字符" }
+  }
+  ```
+- 校验：`source_request_id` 必须存在于本会话的 `ai_requests`（按 `session_id + request_id` 查表，**不读浏览器 PATCH 的 `aiRequests` 数组**）；`content` 1–20000 字符；每会话最多 20 条；`request_id` 幂等；`expected_version` 过期 → `409`；未授权 → `422 INSUFFICIENT_EVIDENCE`（W1 口径，待 §16-B 确认）。
+- 成功响应：`{ session, result: { status: "APPLIED", draft_id, created_at, data_version }, api_version }`。
+- **撤权清理**：`set_authorization(authorized=false)` 的撤权分支显式 `writingDrafts: []`（与 `diagnosis` / `lastAnswer` / `researchAnswer` 同处）；**不加入 `downstreamReset()`**，因此 `downstreamReset` 仍为 **11**，且目标变更/重新生成方案不会误清草稿。该安全语义的完整分析见 `docs/w1-pending-features.md` §14.4。
+
+### 变更后的集合对照
+
+| 集合 | 现行（`e4d8f49`） | C-01 后 | C-02 后（两项合并） |
+|---|---|---|---|
+| PATCH 白名单 | 19 | 18 | **18** |
+| `record_activity` kind | 14 | 15 | **15** |
+| 会话命令 | 7 | 7 | **8** |
+| `defaultSessionState()` key | 36 | 36 | **37** |
+| `downstreamReset()` key | 11 | 11 | **11** |
+
+> 实现合并时，本节与 `docs/w1-pending-features.md` §14.3、`tests/unit/session-contract.test.js`、`tests/unit/activities.test.js` 必须逐数字一致；任一不一致即视为契约变更未完成。
 
 ## AI 任务（真实模型 / fixture 桩）
 ```http
