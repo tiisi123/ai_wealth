@@ -100,6 +100,32 @@
 
 **仍未变化的边界**：这 4 个 PR 都没有改 A–G 列指标、没有新增运行路由、没有改冻结集合、没有把 fixture 结果写成真实模型或生产验收结论。**页面三态覆盖的准确计数以 §15 为准**：H 类 UI 已收口不等于每个页面都有独立的三态断言。
 
+### 0.8 波次 6 收工登记与基线推进（2026-11-08，基线 `d08e7a1`）
+
+> 编号说明：§0.7 已被「波次 5 收口登记与基线推进」占用，波次 6 依 §0.3–§0.7 的递增规则顺延为 §0.8。
+
+波次 6 已合并 10 个 PR，基线由 `e4d8f49` / `a7414eb` 一线推进到 **`d08e7a1`**。本节只登记「代码事实变了什么」，不改写 §1.1 / §1.2 的历史缺口基数（保留追溯）；页面三态覆盖计数以本节与 §15 为准。
+
+| PR | 类型（owner） | 对本清单的实质影响 |
+|---|---|---|
+| #37 | frontend-research（`frontend-research`） | **F-13 修复**：`pc/research` 的 `ask` 删除默认问题兜底，空输入落 `prompt-needed`，不再伪造 AI 成功结果。 |
+| #39 | frontend-flow（`frontend-flow`） | C-01 前置兼容（`m-contact` 优先走 `record_activity(kind='contact-request')`）与 F-09 真实事件来源。 |
+| #40 | frontend-lead（`frontend-lead`） | **F-12 / P-07 修复**：`pc/events`、`pc/macro`、`pc/industry` 消费 `GET /api/knowledge`，渲染成功（专属片段）/ 失败（真实 HTTP 状态 + `error.code` + `error.message`）/ 空态 / 读取中四态，不再是无条件静态空态页。 |
+| #33 | frontend-lead（`frontend-lead`） | F-02 / F-04 / F-05 / F-10 失败态落地：存款输入、AI 422、私行门槛、ready 检查均显示真实错误，不伪造成功。 |
+| #30 | test-unit（`test-unit`） | 补齐 §15.2 中 test-unit 要求的缺失契约断言（规则状态、比较 / 409、存款端点、健康检查）。 |
+| #32 | test-e2e（`test-e2e`） | P-02 / P-03 / H-03 / H-04 三态 E2E（批次 B）。为适配已合并的 #37，在 H-04 成功 / 失败两个用例点击 `ask` 前填入非空 `#researchPrompt`，仅 2 行插入，断言与受控注入未改。 |
+| #36 | test-e2e（`test-e2e`） | 5 个手机页（`m/assistant`、`m/wealth`、`m/holdings`、`m/compare`、`m/result`）三态 E2E（批次 C）。 |
+| #38 | test-e2e（`test-e2e`） | `pc/candidates`、`m/candidates` 成功 / 失败 / 空态 E2E。 |
+| #34 | test-e2e（`test-e2e`） | 7 条 PC 内容路由三态 E2E（批次 A）。基于旧 main 时 P-07 三页的 S/F 共 12 条断言为「诚实红」；**#40 进入 main 并同步重跑后 42 / 42 全绿**，断言未删、未弱化、未 skip。 |
+| #29 | docs（`docs`） | 契约与 30 路由三态矩阵、C-01 / C-02 批准记录、§16 待裁决项登记。 |
+
+**关键事实订正（§15 / §16 中基于 `e4d8f49` 的快照表述，以本节为准，原文保留追溯）**：
+
+- **F-12 已修复并合并**（#40）；**F-13 已修复并合并**（#37）；#32、#34 已合并；#34 的 12 条 P-07 S/F 断言已随 #40 转绿（`ci-e2e-smoke` pass）。§15.3 中「OPEN 未合并 / 12 红」属 `e4d8f49` 时代快照。
+- §16 待裁决项 **D**（H-05 多轮上下文持久化）、**E**（候选独立 `score`）仍为「未批准、不得实施」；**F**（真实数据源 / W2）本次不启动，均保持原状。
+- 本波次新增 4 个 E2E spec（#32 / #34 / #36 / #38）与 5 个 test-unit / http 测试文件（#30），全部为**受控契约响应或 fixture 断言**，不构成真实业务数据验收，也不证明真实模型质量。
+- 冻结集合（36 key / 19 PATCH 字段 / 7 命令 / 11 `downstreamReset`、14 activity kind）未变；未新增运行路由（恒为 30 个）；未把 fixture 结果表述为真实模型或生产验收结论。
+
 ### 0.1 真实模型与 fixture 的表述边界
 
 W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，模型名为 `fixture-generate-1` / `fixture-deterministic-1536`，页面显示「演示桩 fixture」。因此：
@@ -751,6 +777,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 | #21 | frontend-lead（`frontend-lead`） | P-02/P-03/P-06/P-08/P-14/P-16 改接 `/api/demo-data` 与 `/api/knowledge` | §0.6、§1 行 3/4/5/10/15/22/27、§1.2、§3 P-02/P-03/P-06/P-08/P-14/P-16 | 已合并 `6fcdb0e` |
 | #20 | frontend-diagnosis（`frontend-diagnosis`） | 保险动作改接真实产品事实（P-13），`m-diagnose` 停止静默改诊（P-12） | §0.6、§1 行 20/21、§1.2、§3 P-12/P-13 | 已合并 `5bcb1cc` |
 | 本 PR（波次 5 · docs） | docs（`docs`） | 波次 5 收档自检：基线更新为 `5bcb1cc`、波次 4 收工登记（§0.6，位于 §0.5 之后、§0.1 之前）、缺口基数重算（§1.2）、P/H 条目「已推进 · 波次 4」标注、§7 逐条修正复核、§8 决策记录补充、§11.1 A01–A35 自检、§13 波次 5 之后的剩余工作 | §0.6、§1 表行、§1.2、§3、§4、§7、§8、§11、§11.1、§12、§13 | 见本 PR |
+| 波次 6 · docs（本 PR） | docs（`docs`） | 波次 6 收工登记（§0.8）、基线推进到 `d08e7a1`、F-12 / F-13 修复与 #34 转绿登记、§16 待裁决项状态复核 | §0.8、§11 | 见本 PR |
 
 > **勘误（保留原文追溯）**：上表在 `4c2bcda` 时曾把行 `#18` 记为「docs（本 PR）：波次 3 进度登记与缺口基数重算」——该行实际对应的 PR 是 **#19**（`4c2bcda`，docs）；而真正合并的 **#18 `39147e4` 是 backend（真库 `NUMERIC` 归一化）**。本 PR 按 `gh pr view` 与 `git log` 更正，原文保留于此以免后续 Worker 误判。
 
