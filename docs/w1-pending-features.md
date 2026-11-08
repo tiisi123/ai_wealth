@@ -12,7 +12,7 @@
 | DEMO 验收标准 | 架构文档 V2.3 第 11 章 A01–A35，是 DEMO 的通过条件；本清单的「职责页」与「关联 A 项」只做交叉索引 |
 | 台账 | 架构文档附录 A（R2–R62 逐条承载与判定归属），本清单不复制其表格 |
 | 本文性质 | 需求侧完成条件与验收归属；**不含测试代码**，不新增运行页面，不改 `CONTEXT.md`、`README.md`、架构文档、`tests/`、`src/`、`public/`、`scripts/`、`.github/`、`package.json` |
-| 基线 | `origin/main` = `e4d8f49`（波次 5 合并后；本清单首版写于基线 `53eb19c`，波次 1 后校正为 `d0b7620`，波次 3 起校正为 `cf07b1b`，波次 4 起校正为 `9411ead`，波次 5 起校正为 `5bcb1cc`，波次 5 收档起校正为 `e4d8f49`，均见 §0.3 / §0.4 / §0.5 / §0.6 / §0.7）。所列「当前演示态」均为该基线上 `public/app.js`、`public/actions/*.js`、`public/actions-registry.js`、`tests/e2e/` 与 `src/` 的**代码事实**，不是人工观感描述 |
+| 基线 | `origin/main` = `720a546`（#28 ownership 合并后；本清单首版写于基线 `53eb19c`，波次 1 后校正为 `d0b7620`，波次 3 起校正为 `cf07b1b`，波次 4 起校正为 `9411ead`，波次 5 起校正为 `5bcb1cc`，波次 5 收档起校正为 `e4d8f49`，`#28` 合并后同步为 `720a546`，均见 §0.3 / §0.4 / §0.5 / §0.6 / §0.7）。所列「当前演示态」与 §15 矩阵的**代码事实仍以 `e4d8f49` 为准**（#28 只改 `scripts/ci/check-ownership.mjs` 的 owner 登记，不改变页面/服务端行为）；「当前演示态」取自 `public/app.js`、`public/actions/*.js`、`public/actions-registry.js`、`tests/e2e/` 与 `src/`，不是人工观感描述 |
 
 ### 0.3 基线校正与波次 1 收工登记（2026-11-05 复核）
 
@@ -711,7 +711,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 1. **一个变更一个 PR**：C-01、C-02 各自一个 PR，分支 `ao/contract/<topic>`；同一提交内包含**实现 + `docs/api-contract.md` + `tests/unit/session-contract.test.js` + `tests/unit/activities.test.js`**（后两者按变更实际需要），不拆中间态。
 2. **只使用 #28 的共同 owner**：#28 已登记 3 条精确路径（`docs/api-contract.md`、`tests/unit/session-contract.test.js`、`tests/unit/activities.test.js`），**不再新增或扩大**；不扩 `docs/`/`tests/` 前缀，不加 `public/app.js`/`flow.js`/`w1-flow`/`frozen-set-regression`，不加 `baseline`。
 3. **单 head 全量验证**：原子 PR 的 head 必须 6 个 job + `ci-merge-gate` 全绿，并在该 head 上跑：新集合断言（C-01 18/15/7/36/11；C-02 叠加后 18/15/8/37/11）、`session-contract.test.js`/`activities.test.js` 的新增断言；`docs/api-contract.md` 与本清单的集合数字逐项一致。
-4. **前置**：`#28`（`scripts/ci/check-ownership.mjs` 的 3 条 owner）必须先合并；合并后同步最新 `main` 再重跑 CI。**本 docs PR 不改 CI、测试或代码。**
+4. **前置**：`#28`（`scripts/ci/check-ownership.mjs` 的 3 条 owner）已合并为 `720a546`；本 PR 已同步该 `main` 并重跑 CI。**本 docs PR 不改 CI、测试或代码。**
 5. **未覆盖文件**：`frozen-set-regression.test.js` 的 owner 缺口见 §14.6.7 / §16-H，**在 H 解决前原子 PR 不能合并**；DB 集成测试（`w1-flow`）与前端切换（`flow.js`）不在原子 PR，分别由后续 test-db PR 与 §14.6.6 的兼容序列处理。
 6. **回退**：回退该原子 PR 即整体回退；不允许只回退测试保留代码。
 
@@ -953,12 +953,12 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 3. **真实数据源（F）**：保单表、`customer.qualified` 认定来源、产品净值序列/规模/持仓分布/管理人、事件/宏观/行业资讯——均属 W2 或数据波次，**本次不启动**（§15.5 明确其页面只能做受控响应三态或真实无来源空态）。
 4. **真实模型与真实 Embedding**：仍为 `AI_MODE=fixture`，草稿与引用的内容质量不由 W1 判定。
 5. **`downstreamReset` 扩容到 12**：本记录明确不需要；若实现者认为必须，须回到 §8.1 重新批准。
-6. **共同 owner 登记本身**：由 `#28` 完成（3 条精确路径），本 docs PR **不修改** `scripts/ci/check-ownership.mjs` 或 `tests/unit/ownership.test.js`；等待 #28 合并后同步 main。**`frozen-set-regression.test.js` 的 owner 缺口见 §16-H**，不得自行扩 owner。本 PR 也不改任何 CI workflow、分支保护或 required check。
+6. **共同 owner 登记本身**：由 `#28` 完成（3 条精确路径，已合并 `720a546`），本 docs PR **不修改** `scripts/ci/check-ownership.mjs` 或 `tests/unit/ownership.test.js`；本 PR 已同步 `720a546` 并重跑 CI。**`frozen-set-regression.test.js` 的 owner 缺口见 §16-H**，不得自行扩 owner。本 PR 也不改任何 CI workflow、分支保护或 required check。
 7. **A/B/C 已由用户裁决**：A 仅 contact-request 豁免授权；B `save_draft` 要求 `authorized=true`；C 草稿仅撤权清空。三项不再属待裁决，按 §14.1 / §14.2 / §14.4 实施。
 
 ### 14.6 原子契约变更的文件清单与共同 owner 现状（依据 #28）
 
-> **2026-11-08 修正**：`#28` 已在 `OWNERSHIP` 中登记 **3 条精确共同 owner**（`docs/api-contract.md`、`tests/unit/session-contract.test.js`、`tests/unit/activities.test.js`），当前 OPEN、head `08501a7`、CI 全绿，**等待合并**。本节据此改写：原子 PR 只能使用这 3 条，**不再提出或扩大 owner**；此前「7 文件共同 owner」提案作废。**仍有一个 #28 未覆盖的冻结测试缺口**（`tests/unit/frozen-set-regression.test.js`），列为 §16-H 阻塞，**不得自行扩 owner 绕过**。本 docs PR 不改 CI、测试或代码。
+> **2026-11-08 修正**：`#28` 已合并为 `720a546`，在 `OWNERSHIP` 中登记 **3 条精确共同 owner**（`docs/api-contract.md`、`tests/unit/session-contract.test.js`、`tests/unit/activities.test.js`），规则已生效。本节据此改写：原子 PR 只能使用这 3 条，**不再提出或扩大 owner**；此前「7 文件共同 owner」提案作废。**仍有一个 #28 未覆盖的冻结测试缺口**（`tests/unit/frozen-set-regression.test.js`），列为 §16-H 阻塞，**不得自行扩 owner 绕过**。本 docs PR 不改 CI、测试或代码。
 
 #### 14.6.1 为什么不是 stacked（保留分析，stacked 方案作废）
 
@@ -1011,8 +1011,8 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 
 #### 14.6.5 #28 前置与同步步骤
 
-1. **#28 合并前**：C-01/C-02 原子 PR 不应开始合并；#28 当前 head `08501a7`，3 条 owner，6 job + `ci-merge-gate` 全绿、`mergeStateStatus=CLEAN`。
-2. **#28 合并后**：`git fetch origin`，把最新 `origin/main` 合入本 PR 分支（普通 merge，不 rebase 共享历史、不 force-push），确认 `scripts/ci/check-ownership.mjs` 含 3 条；再重跑本 PR 的 6 job + `ci-merge-gate`。
+1. **#28 已合并**：merge commit `720a546`；`scripts/ci/check-ownership.mjs` 含 3 条精确 owner。C-01/C-02 原子 PR 可直接基于含 #28 的 `main`。
+2. **本 PR 已同步**：`#29` 已把 `origin/main` `720a546` 合入本分支（普通 merge，不 rebase 共享历史、不 force-push），并重跑 6 job + `ci-merge-gate`；文档基线同步为 `720a546`，矩阵代码事实仍按 `e4d8f49`。
 3. **原子 PR 分支**：`ao/contract/<topic>`；`ci-ownership` 将允许 `src/components/sessions/` + 上述 3 个文件；仍会拒绝 `public/app.js`、`tests/e2e/*`、`docs/architecture.md`、其他 `tests/**`（#28 描述已本地演练）。
 4. **本 docs PR 的边界**：只改两份 docs；不改 `scripts/ci/check-ownership.mjs`、`tests/unit/ownership.test.js`、workflow、分支保护或 required check。
 
@@ -1038,7 +1038,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 
 | 方案 | 做法 | 评价 |
 |---|---|---|
-| A（推荐） | 在 #28 中再增一条精确路径 `['tests/unit/frozen-set-regression.test.js', ['test-unit','contract']]` | 只加一个确属契约的冻结测试文件，不扩目录，能真正让原子 PR 全绿 |
+| A（推荐） | 另开一个 `ci` PR（#28 已合并，不能原地改）增补精确路径 `['tests/unit/frozen-set-regression.test.js', ['test-unit','contract']]` | 只加一个确属契约的冻结测试文件，不扩目录，能真正让原子 PR 全绿 |
 | B | test-unit 先把该文件的断言并入 `session-contract.test.js` 并删除旧文件 | 会减少一份独立回归锁，**不推荐**；且仍是跨 PR 协调 |
 | C | 在原子 PR 中跳过/删除该测试 | **禁止**：违反「不弱化断言」，且等同于绕过冻结锁 |
 
@@ -1046,7 +1046,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 
 #### 14.6.8 排期与验收（更新）
 
-- **顺序**：`#28` 合并 →（若 H 采用 A）`#28` 增补/另开 ci PR → 本 PR #29 同步 main → C-01 前置 frontend-flow 兼容 PR → C-01 原子 PR → C-02 原子 PR → frontend-flow 清理 → test-db（w1-flow）与 test-e2e 三态 PR。
+- **顺序**：`#28` 已合并 `720a546` → 本 PR #29 已同步 `720a546` 并重跑 CI →（若 H 采用 A）另开 `ci` PR 增补 `frozen-set-regression` owner → C-01 前置 frontend-flow 兼容 PR → C-01 原子 PR → C-02 原子 PR → frontend-flow 清理 → test-db（w1-flow）与 test-e2e 三态 PR。
 - **集合**：C-01 后 18/15/7/36/11；C-02 叠加后 18/15/8/37/11。
 - **原子 PR 必须绿**：6 job + `ci-merge-gate`；`node --check`、`npm test`、`W1_DB_SMOKE=true npm run test:integration`、`npm run test:e2e`；docs 与两份 co-owned 测试、§14.3 数字逐项一致。
 - **禁止**：为了让原子 PR 变绿而扩 owner、删/跳过 frozen-set 断言、把 DB/前端/E2E 塞进原子 PR、使用 `baseline`。
@@ -1157,6 +1157,6 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 | D | **H-05 多轮上下文持久化** | **待裁决（未批准，不得实施）** | 需要新增会话字段（如 `conversation`）或命令，属新契约变更；另立契约、单独立项，不与 C-01/C-02 捆绑 | `m/assistant` 的 A14b 验收；若落地影响 36 key |
 | E | **候选独立 `score`** | **待裁决（未批准，不得实施）** | 即使后续认为可独立推进，也须先取得明确裁决；不得写成已批准。建议 `backend` 在 `candidateCalculation` 增字段、前端消费；不改会话集合 | H-02/P-16 的「排序可复算」验收 |
 | F | **真实数据源 / W2 是否启动** | **本次不启动** | P-02/P-03/P-05/P-07/P-13/P-17 的真实数据验收依赖它；W2/数据波次另排 | §15 中 12 个「缺数据源」页面只能做受控三态/真实空态 |
-| H | **`tests/unit/frozen-set-regression.test.js` 的共同 owner 缺口** | **阻塞（待裁决）** | 推荐 A：在 #28 增补该单文件精确 owner（`test-unit` + `contract`）；B：由 test-unit 把断言并入 `session-contract.test.js` 并删旧文件（减少独立回归锁，不推荐）；C：跳过/删除（禁止） | 不解决则 C-01/C-02 原子 PR 的 `ci-unit-api` 必红，无法合并 |
+| H | **`tests/unit/frozen-set-regression.test.js` 的共同 owner 缺口** | **阻塞（待裁决）** | 推荐 A：另开 `ci` PR 增补该单文件精确 owner（`test-unit` + `contract`；#28 已合并不能原地改）；B：由 test-unit 把断言并入 `session-contract.test.js` 并删旧文件（减少独立回归锁，不推荐）；C：跳过/删除（禁止） | 不解决则 C-01/C-02 原子 PR 的 `ci-unit-api` 必红，无法合并 |
 
 > D/E 仍为待裁决，**不得**在代码、测试或文档他处写成「已批准/可实施」；F/W2 不启动；H 是当前唯一的原子 PR 阻塞项。A/B/C 的落地口径见 §14.1 / §14.2 / §14.4。
