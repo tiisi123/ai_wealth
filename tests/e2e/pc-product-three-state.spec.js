@@ -28,6 +28,11 @@ import { openRoute } from './helpers.js';
 // GET /api/knowledge 全部返回受控契约响应；PATCH 回显 patch 以保持前后端状态一致；
 // 每个用例按需覆盖 demo-data（产品目录）、ai/generate（research_qa）、
 // sessions/.../commands（save_comparison）。这样用例不依赖本地 DB，且行为确定。
+//
+// 【随 main 同步】编排器已把 main 合入本分支至 #37（empty ask → prompt-needed、不再为
+// 空白输入带入默认问题）。据此 pc/research：S/F 点击 ask 前先填真实问题以保持生成路径；
+// 空态改为「清空输入 → 点击 ask → prompt-needed 且未发出 /api/ai/generate」的真实因果链，
+// 删除原「受控 landing 注入」补充用例。其余 4 页三态断言不变。
 
 const APP = '#app';
 const API_VERSION = 'v1';
@@ -314,13 +319,30 @@ test.describe('P-02 pc/product-fund：GET /api/demo-data 三态', () => {
 
 // P-02 区间切换：用 DOM change 事件驱动 app 的委托监听（setUi + rerender），
 // 与视口无关，pc / mobile 两个工程都可稳定触发。
+// ensureProductCatalog 返回后会再 render 一次，可能覆盖紧随其后的一次 change；
+// 因此切换后确认目标区间文本真实出现，否则重试（不删断言、不放宽断言）。
 async function pickInterval(page, value) {
-  await page.evaluate((v) => {
-    const select = document.querySelector('select[data-ui-change="interval"]');
-    if (!select) throw new Error('观察区间 select 不存在');
-    select.value = v;
-    select.dispatchEvent(new Event('change', { bubbles: true }));
-  }, value);
+  const target = `观察区间：${value}`;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await page.evaluate((v) => {
+      const select = document.querySelector('select[data-ui-change="interval"]');
+      if (select) {
+        select.value = v;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }, value);
+    try {
+      await page.waitForFunction(
+        (t) => document.querySelector('#app')?.textContent?.includes(t),
+        target,
+        { timeout: 2000 }
+      );
+      return;
+    } catch {
+      // 异步重渲染覆盖了本次切换，重选一次；select 不存在时同样重试。
+    }
+  }
+  throw new Error(`观察区间切换未生效：${value}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -487,8 +509,9 @@ test.describe('H-04 pc/research：POST /api/ai/generate（research_qa）三态',
   test('成功：研究回答 + 引用（标题 + 页码）+ 时延 / 模型可见', async ({ page }) => {
     await installBackend(page);
     await openRoute(page, 'pc/research');
+    // #37 后 ask 不再为空白输入带入默认问题：成功态必须先填入真实问题才会发起生成。
+    await page.locator('#researchPrompt').fill('美联储降息对黄金和固收+产品可能有什么影响？');
     // 真实动作：点击「开始研究」→ POST /api/ai/generate（受控成功契约）→ 写 researchAnswer。
-    await page.locator('#researchPrompt').fill('请说明宏观利率对固收产品的影响');
     await page.locator('[data-action="ask"]').click();
     await expect(page).toHaveURL(/#pc\/result/);
     // 回到研究页读取服务端已保存的 researchAnswer 与引用回指。
@@ -511,7 +534,8 @@ test.describe('H-04 pc/research：POST /api/ai/generate（research_qa）三态',
     // 受控契约：服务端无引用/证据，以 422 INSUFFICIENT_EVIDENCE 失败。
     await installBackend(page, { generateError: researchGenerateFailure() });
     await openRoute(page, 'pc/research');
-    await page.locator('#researchPrompt').fill('请说明宏观利率对固收产品的影响');
+    // #37 后空输入会直接落 prompt-needed；失败态须填入真实问题才会发起 422 生成调用。
+    await page.locator('#researchPrompt').fill('当前授权知识对该问题是否有足够证据支撑？');
     await page.locator('[data-action="ask"]').click();
     await expect(page).toHaveURL(/#pc\/result/);
     const app = page.locator(APP);
@@ -533,11 +557,16 @@ test.describe('H-04 pc/research：POST /api/ai/generate（research_qa）三态',
     await expect(app).not.toContainText('引用回指（chunk_id · 标题 · 页码）');
   });
 
-  test('空态：无服务端研究回答 → 等待 AI 生成，不伪造答案 / 引用 / 模型', async ({ page }) => {
-    // 真实无来源空态：会话里没有 researchAnswer，页面如实显示「等待生成」的原始空态。
+  test('空态：清空输入→ask→prompt-needed，不伪造答案且未发出 /api/ai/generate（真实因果链）', async ({ page }) => {
+    // 记录真实网络请求：空问题不得触发任何 AI 生成调用（#37 的真实修复，非受控 landing 注入）。
+    const generateRequests = [];
+    page.on('request', (req) => {
+      if (req.url().includes('/api/ai/generate')) generateRequests.push(req.url());
+    });
     await installBackend(page);
     await openRoute(page, 'pc/research');
     const app = page.locator(APP);
+    // 真实无来源空态（保留）：会话里没有 researchAnswer，页面如实显示「等待生成」，不伪造答案/引用/模型。
     await expect(app).toContainText('等待 AI 生成', { timeout: 20_000 });
     await expect(app).toContainText('尚未发起真实研究任务');
     await expect(app).toContainText('待发起');
@@ -545,19 +574,16 @@ test.describe('H-04 pc/research：POST /api/ai/generate（research_qa）三态',
     await expect(app).not.toContainText('财富智服 · 研究回答');
     await expect(app).not.toContainText('引用回指（chunk_id · 标题 · 页码）');
     await expect(app).not.toContainText('演示桩 fixture');
-  });
-
-  test('空态（补充 · 受控契约）：空问题的 prompt-needed 落点显示「请先输入问题」', async ({ page }) => {
-    // 受控契约响应：空问题被服务端拒绝后写入 prompt-needed 落点。
-    // 这是 UI 契约验证（页面在服务端返回该 landing 时的呈现），不是真实业务数据验收；
-    // 不弱化上面「真实无来源空态」的任何断言。
-    await installBackend(page, { state: { landing: { id: 'prompt-needed', from: 'pc/research', asOf: DATA_AS_OF } } });
-    await openRoute(page, 'pc/result');
-    const app = page.locator(APP);
+    // 真实因果链：清空问题输入框 → 点击「开始研究」→ 空问题直接落 prompt-needed 结果页。
+    await page.locator('#researchPrompt').fill('');
+    await page.locator('[data-action="ask"]').click();
+    await expect(page).toHaveURL(/#pc\/result/);
     await expect(app).toContainText('请先输入问题', { timeout: 20_000 });
     await expect(app).toContainText('用大白话描述你的理财问题后');
     await expect(app).toContainText('已授权资料');
     await expect(app).toContainText('#pc/research');
     await expect(app).not.toContainText('本次回答');
+    // 关键断言：空问题没有发起任何 /api/ai/generate（服务端零请求），不把空态伪装成成功/失败态。
+    expect(generateRequests).toHaveLength(0);
   });
 });
