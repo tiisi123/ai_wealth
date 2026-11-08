@@ -711,7 +711,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 1. **一个变更一个 PR**：C-01、C-02 各自一个 PR，分支 `ao/contract/<topic>`；同一提交内包含**实现 + `docs/api-contract.md` + `tests/unit/session-contract.test.js` + `tests/unit/activities.test.js`**（后两者按变更实际需要），不拆中间态。
 2. **只使用 #28 / #35 的共同 owner**：#28/#35 已登记 4 条精确路径（`docs/api-contract.md`、`tests/unit/session-contract.test.js`、`tests/unit/activities.test.js`、`tests/unit/frozen-set-regression.test.js`），**不再新增或扩大**；不扩 `docs/`/`tests/` 前缀，不加 `public/app.js`/`flow.js`/`w1-flow`，不加 `baseline`。
 3. **单 head 全量验证**：原子 PR 的 head 必须 6 个 job + `ci-merge-gate` 全绿，并在该 head 上跑：新集合断言（C-01 18/15/7/36/11；C-02 叠加后 18/15/8/37/11）、`session-contract.test.js`/`activities.test.js` 的新增断言；`docs/api-contract.md` 与本清单的集合数字逐项一致。
-4. **前置**：`#28` / `#35`（合计 4 条 owner）已合并为 `56daaae`；本 PR 已同步该 `main` 并重跑 CI。**本 docs PR 不改 CI、测试或代码。**
+4. **前置**：`#28` / `#35`（合计 4 条 owner）已合并为 `56daaae`；#31（F-01 修复）后 `main` 为 `a7414eb`，本 PR 已同步 `a7414eb` 并重跑 CI。**本 docs PR 不改 CI、测试或代码。**
 5. **未覆盖文件**：`frozen-set-regression.test.js` 已由 #35 纳入共同 owner，**可且必须在原子 PR 内更新**（§14.6.7），不再是阻塞；DB 集成测试（`w1-flow`）与前端切换（`flow.js`）仍不在原子 PR，分别由后续 test-db PR 与 §14.6.6 的兼容序列处理。
 6. **回退**：回退该原子 PR 即整体回退；不允许只回退测试保留代码。
 
@@ -953,7 +953,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 3. **真实数据源（F）**：保单表、`customer.qualified` 认定来源、产品净值序列/规模/持仓分布/管理人、事件/宏观/行业资讯——均属 W2 或数据波次，**本次不启动**（§15.5 明确其页面只能做受控响应三态或真实无来源空态）。
 4. **真实模型与真实 Embedding**：仍为 `AI_MODE=fixture`，草稿与引用的内容质量不由 W1 判定。
 5. **`downstreamReset` 扩容到 12**：本记录明确不需要；若实现者认为必须，须回到 §8.1 重新批准。
-6. **共同 owner 登记本身**：由 `#28` / `#35` 完成（4 条精确路径，已合并 `56daaae`），本 docs PR **不修改** `scripts/ci/check-ownership.mjs` 或 `tests/unit/ownership.test.js`；本 PR 已同步 `56daaae` 并重跑 CI。**`frozen-set-regression.test.js` 已由 #35 纳入共同 owner，H 关闭**；不得再自行扩 owner。本 PR 也不改任何 CI workflow、分支保护或 required check。
+6. **共同 owner 登记本身**：由 `#28` / `#35` 完成（4 条精确路径，已合并 `56daaae`），本 docs PR **不修改** `scripts/ci/check-ownership.mjs` 或 `tests/unit/ownership.test.js`；`#31` 后 `main` 为 `a7414eb`，本 PR 已同步该 head 并重跑 CI。**`frozen-set-regression.test.js` 已由 #35 纳入共同 owner，H 关闭**；不得再自行扩 owner。本 PR 也不改任何 CI workflow、分支保护或 required check。
 7. **A/B/C 已由用户裁决**：A 仅 contact-request 豁免授权；B `save_draft` 要求 `authorized=true`；C 草稿仅撤权清空。三项不再属待裁决，按 §14.1 / §14.2 / §14.4 实施。
 
 ### 14.6 原子契约变更的文件清单与共同 owner 现状（依据 #28）
@@ -1013,7 +1013,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 #### 14.6.5 #28 / #35 前置与同步步骤
 
 1. **#28 / #35 已合并**：merge commits `720a546`（#28，3 条）与 `56daaae`（#35，补 `frozen-set-regression`），合计 4 条精确 owner；`scripts/ci/check-ownership.mjs` 已生效。C-01/C-02 原子 PR 可直接基于 `main` `56daaae`。
-2. **本 PR 已同步**：`#29` 已把 `origin/main` `56daaae` 合入本分支（普通 merge，不 rebase 共享历史、不 force-push），并重跑 6 job + `ci-merge-gate`；文档基线同步为 `56daaae`，矩阵代码事实仍按 `e4d8f49`（#28/#35 只改 ownership）。
+2. **本 PR 已同步**：`#29` 已把 `origin/main` `a7414eb` 合入本分支（普通 merge，不 rebase 共享历史、不 force-push），并重跑 6 job + `ci-merge-gate`；文档基线同步为 `a7414eb`，矩阵代码事实仍按 `e4d8f49`（#28/#35 只改 ownership，#31 只修 F-01 页面分支）。
 3. **原子 PR 分支**：`ao/contract/<topic>`；`ci-ownership` 将允许 `src/components/sessions/` + 上述 4 个文件；仍会拒绝 `public/app.js`、`tests/e2e/*`、`docs/architecture.md`、其他 `tests/**`。
 4. **本 docs PR 的边界**：只改两份 docs；不改 `scripts/ci/check-ownership.mjs`、`tests/unit/ownership.test.js`、workflow、分支保护或 required check。
 
@@ -1037,7 +1037,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 
 #### 14.6.8 排期与验收（更新）
 
-- **顺序**：`#28` / `#35` 已合并 `56daaae` → 本 PR #29 已同步 `56daaae` 并重跑 CI → C-01 前置 frontend-flow 兼容 PR → C-01 原子 PR → C-02 原子 PR → frontend-flow 清理 → test-db（w1-flow）与 test-e2e 三态 PR。
+- **顺序**：`#28` / `#35` 已合并 `56daaae`，`#31` 后 `main` = `a7414eb` → 本 PR #29 已同步 `a7414eb` 并重跑 CI → C-01 前置 frontend-flow 兼容 PR → C-01 原子 PR → C-02 原子 PR → frontend-flow 清理 → test-db（w1-flow）与 test-e2e 三态 PR。
 - **集合**：C-01 后 18/15/7/36/11；C-02 叠加后 18/15/8/37/11。
 - **原子 PR 必须绿**：6 job + `ci-merge-gate`；`node --check`、`npm test`、`W1_DB_SMOKE=true npm run test:integration`、`npm run test:e2e`；docs 与 3 份 co-owned 测试（`session-contract` / `activities` / `frozen-set-regression`）、§14.3 数字逐项一致。
 - **禁止**：为了让原子 PR 变绿而扩 owner、删/跳过 frozen-set 断言、把 DB/前端/E2E 塞进原子 PR、使用 `baseline`。
