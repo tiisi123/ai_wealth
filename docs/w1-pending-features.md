@@ -113,7 +113,7 @@
 | #40 | frontend-lead（`frontend-lead`） | **F-12 / P-07 修复**：`pc/events`、`pc/macro`、`pc/industry` 消费 `GET /api/knowledge`，渲染成功（专属片段）/ 失败（真实 HTTP 状态 + `error.code` + `error.message`）/ 空态 / 读取中四态，不再是无条件静态空态页。 |
 | #33 | frontend-lead（`frontend-lead`） | F-02 / F-04 / F-05 / F-10 失败态落地：存款输入、AI 422、私行门槛、ready 检查均显示真实错误，不伪造成功。 |
 | #30 | test-unit（`test-unit`） | 补齐 §15.2 中 test-unit 要求的缺失契约断言（规则状态、比较 / 409、存款端点、健康检查）。 |
-| #32 | test-e2e（`test-e2e`） | P-02 / P-03 / H-03 / H-04 三态 E2E（批次 B）。为适配已合并的 #37，在 H-04 成功 / 失败两个用例点击 `ask` 前填入非空 `#researchPrompt`，仅 2 行插入，断言与受控注入未改。 |
+| #32 | test-e2e（`test-e2e`） | P-02 / P-03 / H-03 / H-04 三态 E2E（批次 B）。为适配已合并的 #37，H-04 成功 / 失败用例点击 `ask` 前填入非空 `#researchPrompt`。**收口续修**：H-04 空态由「受控 landing 注入」改为真实因果链（清空输入 → `ask` → `prompt-needed`，并新增「`/api/ai/generate` 零请求」断言）；原受控注入用例删除，但其全部断言保留并随真实链路强化，未删 / 未弱化任何断言，未改生产代码。 |
 | #36 | test-e2e（`test-e2e`） | 5 个手机页（`m/assistant`、`m/wealth`、`m/holdings`、`m/compare`、`m/result`）三态 E2E（批次 C）。 |
 | #38 | test-e2e（`test-e2e`） | `pc/candidates`、`m/candidates` 成功 / 失败 / 空态 E2E。 |
 | #34 | test-e2e（`test-e2e`） | 7 条 PC 内容路由三态 E2E（批次 A）。基于旧 main 时 P-07 三页的 S/F 共 12 条断言为「诚实红」；**#40 进入 main 并同步重跑后 42 / 42 全绿**，断言未删、未弱化、未 skip。 |
