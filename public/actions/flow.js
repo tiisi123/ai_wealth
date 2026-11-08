@@ -46,7 +46,12 @@ window.WealthActions.registerDomain(["go-route","m-candidate-reason","m-compare-
       const ruleMatch={status:result.status,rule_id:result.rule_id,rule_version:result.rule_version,confidence:result.confidence,missing_fields:result.missing_fields};
       patch({ruleMatch,aiRequests:[...(session().aiRequests||[]),result.request_id]});
       if(result.status!=='MATCHED'){
-        openLanding('rule-confirmation');
+        // F-01：非 MATCHED 必须按规则匹配语义分流，不能一律落到「需要确认配置条件」。
+        // NEED_CONFIRMATION：缺字段/置信度不足，需补充输入 → rule-confirmation；
+        // UNSUPPORTED_RULE 及其它非 MATCHED（规则不支持 / 当前目标无法适用）→ 既有 rule-unsupported。
+        // 两类都在此 return false：不执行 generate_allocation / generate_candidates，
+        // 不生成或覆盖配置方案，也不打开成功结果页。
+        openLanding(result.status==='NEED_CONFIRMATION'?'rule-confirmation':'rule-unsupported');
         return false;
       }
       const allocation=await window.WealthApi.command('generate_allocation',{rule_id:result.rule_id,rule_version:result.rule_version,goal});
@@ -126,9 +131,72 @@ window.WealthActions.registerDomain(["go-route","m-candidate-reason","m-compare-
     genericModal('资格办理指引',`<ol><li>确认身份与资产信息</li><li>完成风险测评和投资经验问卷</li><li>提交合格投资者证明材料</li><li>等待客户经理和系统双重审核</li></ol><div class="callout warn">受限产品仅在准入完成且授权范围内展示。当前演示客户未完成认定，不展示私募/信托/专户详情。</div>`,btn('联系客户经理','m-contact','primary'));
     return;
   }
-  if(action==='m-contact'){patch({contactTodo:true}); closeDialog(); go('m/private'); return;}
+  // C-01 前置兼容：优先用真实命令 record_activity(kind='contact-request') 写入服务端活动记录。
+  // window.WealthApi.command() 自动携带 expected_version + request_id（幂等、乐观锁），此处沿用。
+  // 旧服务端尚未收录该 kind 时，会以 400 VALIDATION_ERROR 拒绝；仅此一种错误允许临时回退到
+  // 旧的 PATCH contactTodo 行为（后续清理 PR 会删除该回退）。其它错误（409/422/5xx/网络/其它 400）
+  // 一律走 showActionError 显示真实错误，不回退、不伪造成功。
+  if(action==='m-contact'){
+    void (async()=>{
+      let body;
+      try{
+        body=await window.WealthApi.command('record_activity',{kind:'contact-request',title:'联系客户经理'});
+      }catch(error){
+        const info=error?.body?.error||{};
+        const details=info.details||{};
+        const code=String(error?.code||info.code||'');
+        const message=String(info.message||error?.message||'');
+        const unknownKind400=error?.status===400 && code==='VALIDATION_ERROR'
+          && (String(details.kind||'')==='contact-request' || /kind|白名单/i.test(message));
+        if(unknownKind400){
+          // 临时回退：旧服务端没有 contact-request kind，保留原 PATCH contactTodo 行为；
+          // 不声称任何服务端记录，不展示虚构 activity_id/时间。
+          patch({contactTodo:true}); closeDialog(); go('m/private'); return;
+        }
+        showActionError(error); return;
+      }
+      const record=body?.result;
+      if(record?.status!=='APPLIED' || !record.activity_id || !record.created_at){
+        showActionError('应用服务未确认联系请求活动记录，未展示成功状态'); return;
+      }
+      // 新 kind 路径：只展示服务端真实生成的 activity_id / created_at / data_version。
+      const rows=[
+        ['活动类型','contact-request（record_activity）'],
+        ['activity_id',String(record.activity_id)],
+        ['created_at（服务端时间）',String(record.created_at)],
+        ['data_version',String(record.data_version||'—')]
+      ].map(([k,v])=>`<div class="stat-row"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
+      closeDialog();
+      genericModal('联系客户经理已记录',
+        `<p class="section-space">该联系请求已由应用服务写入真实活动记录，服务端生成 activity_id / created_at / data_version，刷新后可从会话恢复；本次调用沿用 expected_version + request_id（幂等），没有写入浏览器本地待办，也不展示任何虚构记录。</p><div class="list-row">${rows}</div><div class="callout">记录仅供流程验证，不构成业务受理结论。</div>`,
+        btn('知道了','close-dialog','primary'));
+    })();
+    return;
+  }
+  // F-09：移除固定的事件解读演示文本与虚构持仓暴露比例，不再保留任何写死的波动/比例数值。
+  // 只消费 GET /api/knowledge 落到会话里的真实知识片段；片段须带服务端来源 source_id、
+  // 时点 source_timestamp 与正文 text 才算可靠来源。没有任何可靠来源时显式空态，
+  // 不补入默认观点、不保留任何虚构数值。
   if(action==='m-event'){
-    genericModal('事件解读',`<h2>A500 本周波动上升</h2><p>事实：行业权重调整与市场风险偏好变化使净值波动扩大。</p><p>对持仓：客户组合权益暴露 20%，影响可控。</p><div class="callout">建议先解释波动来源和数据区间，再由客户经理决定是否触达。不构成投资建议。</div>`);
+    const chunks=Array.isArray(session()._knowledgeChunks)?session()._knowledgeChunks:[];
+    const reliable=c=>c && typeof c.source_id==='string' && c.source_id.trim()
+      && typeof c.source_timestamp==='string' && c.source_timestamp.trim()
+      && typeof c.text==='string' && c.text.trim();
+    const sources=chunks.filter(reliable);
+    if(!sources.length){
+      closeDialog();
+      genericModal('事件解读',
+        `<div class="callout warn"><b>暂无可靠事件来源</b><p>共享应用服务没有返回带来源与时点的事件知识片段（GET /api/knowledge）。本页不展示演示事件、波动幅度或持仓暴露比例，也不补入默认观点。可先在智能问答中针对具体问题检索。</p></div>`,
+        btn('知道了','close-dialog','primary'));
+      return;
+    }
+    const shownTime=v=>typeof literalTime==='function'?(literalTime(v)||String(v||'—')):String(v||'—');
+    const version=session()._knowledgeStatus?.knowledge_version||'—';
+    const rows=sources.map(c=>`<div class="list-row"><h3>${esc(c.title||c.chunk_id||'知识片段')}</h3><p>${esc(c.text)}</p><p class="muted">数据来源 ${esc(c.source_id)} · 时点 ${esc(shownTime(c.source_timestamp))} · 片段 ${esc(c.chunk_id||'—')}${c.page!=null?` · 第 ${esc(String(c.page))} 页`:''} · 知识版本 ${esc(c.knowledge_version||version)}</p></div>`).join('');
+    closeDialog();
+    genericModal('事件解读',
+      `<p class="muted">以下内容只取自 GET /api/knowledge 的真实知识片段，逐条标注服务端来源与时点；共享知识库没有专属事件序列时只列出可用的已发布片段，系统不补入默认观点，不展示未经服务端给出的波动幅度、持仓暴露或任何演示数值。</p>${rows}<div class="callout">片段为服务端已发布材料，不构成投资建议；是否触达客户由客户经理决定。</div>`,
+      btn('知道了','close-dialog','primary'));
     return;
   }
   if(action==='m-remind'){void runBusinessCommand('create_reminder',{},'m-remind');return;}
