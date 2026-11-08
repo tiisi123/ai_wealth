@@ -67,7 +67,7 @@ Content-Type: application/json
 
 ## 共享会话状态契约（W1 冻结，2026-11-05）
 
-`defaultSessionState()` 的 36 个 key 按写入途径分三类。本节表格与 `tests/unit/session-contract.test.js` 的期望集合互为锁定：**任何白名单、命令、状态形状或清理规则的变更，必须在同一原子 PR 内同时改代码、本表与冻结集合测试**。原子契约变更（C-01 / C-02）不能拆成 stacked 中间态（删 PATCH 字段的那一提交会让冻结断言立即变红），落地形态是**每项变更一个原子 PR**（作者 `contract`），只使用 `#28`（已合并 `720a546`）登记的 3 条精确共同 owner（本文件、`tests/unit/session-contract.test.js`、`tests/unit/activities.test.js`）；**不新增/扩大 owner**，不扩目录、不加 `public/app.js`、不用 label 或 `baseline` 绕过。`tests/unit/frozen-set-regression.test.js` 的 owner 缺口见 `docs/w1-pending-features.md` §14.6.7 / §16-H；DB 集成与前端切换按 §14.6 的后续步骤。
+`defaultSessionState()` 的 36 个 key 按写入途径分三类。本节表格与 `tests/unit/session-contract.test.js` 的期望集合互为锁定：**任何白名单、命令、状态形状或清理规则的变更，必须在同一原子 PR 内同时改代码、本表与冻结集合测试**。原子契约变更（C-01 / C-02）不能拆成 stacked 中间态（删 PATCH 字段的那一提交会让冻结断言立即变红），落地形态是**每项变更一个原子 PR**（作者 `contract`），只使用 `#28` / `#35`（已合并 `56daaae`）登记的 4 条精确共同 owner（本文件、`tests/unit/session-contract.test.js`、`tests/unit/activities.test.js`、`tests/unit/frozen-set-regression.test.js`）；**不新增/扩大 owner**，不扩目录、不加 `public/app.js`、不用 label 或 `baseline` 绕过。DB 集成与前端切换按 §14.6 的后续步骤。
 
 | 类别 | 字段 | 写入途径 | 校验 | 撤权清理 | 刷新恢复 |
 |---|---|---|---|---|---|
@@ -81,9 +81,9 @@ Content-Type: application/json
 
 **生命周期**：会话落 `app_sessions`，`status='ACTIVE'`，`expires_at = NOW() + INTERVAL '12 hours'`；浏览器只保存 `session_id`（localStorage `wealth-demo-session-id`），业务状态全部由服务端会话提供，刷新后按 `session_id` 恢复；版本过期返回 `409 VERSION_CONFLICT`，同一 `request_id` 重放返回首次结果且不推进状态。
 
-**契约冻结判定**：`tests/unit/session-contract.test.js` 与 `tests/unit/frozen-set-regression.test.js` 共同锁定 19 个 PATCH 字段、7 个命令、36 个状态 key、11 个 `downstreamReset` key，以及服务端权威字段不可经 PATCH 写入。改动这些集合必须同步改本表与冻结测试，视为契约变更，需走 PR 与 `ci-merge-gate`；**「同步」的落地形态是单原子 PR**：`session-contract.test.js` 已由 #28 与 `contract` 共同 owner，可在同一 PR 更新；`frozen-set-regression.test.js` 尚未登记共同 owner，其缺口见 §16-H，**在缺口解决前不得宣称原子 PR 已可全绿**。
+**契约冻结判定**：`tests/unit/session-contract.test.js` 与 `tests/unit/frozen-set-regression.test.js` 共同锁定 19 个 PATCH 字段、7 个命令、36 个状态 key、11 个 `downstreamReset` key，以及服务端权威字段不可经 PATCH 写入。改动这些集合必须同步改本表与冻结测试，视为契约变更，需走 PR 与 `ci-merge-gate`；**「同步」的落地形态是单原子 PR**：`session-contract.test.js` 已由 #28、`frozen-set-regression.test.js` 已由 #35 登记为 `contract` 的共同 owner，两者都必须在同一 PR 更新；任一未改即视为原子 PR 未完成。
 
-> **待实现变更预告**：下文「已批准的状态契约变更（C-01 / C-02）」已获用户批准，但**截至 `720a546` 尚未实现**（#28 只改 ownership 门禁，契约行为与 `e4d8f49` 相同）；实现前，本节 36 / 19 / 7 / 11 的现行语义仍是唯一有效的服务端行为，页面不得提前按新契约写入。
+> **待实现变更预告**：下文「已批准的状态契约变更（C-01 / C-02）」已获用户批准，但**截至 `56daaae` 尚未实现**（#28/#35 只改 ownership 门禁，契约行为与 `e4d8f49` 相同）；实现前，本节 36 / 19 / 7 / 11 的现行语义仍是唯一有效的服务端行为，页面不得提前按新契约写入。
 
 ## 只读计算与派生投影（W1 波次 3）
 
@@ -242,11 +242,11 @@ Content-Type: application/json
 | 11 个 `downstreamReset` key | **不改** | 无写入即无失效级联 |
 | 14 类 `record_activity` kind | **不改** | 本节不写 `activities` |
 
-凡将来需要把上述任一派生值落成会话状态（例如把认定状态或草稿写入会话），仍按 `docs/w1-pending-features.md` §8 流程先取得状态契约 owner 批准，并由同一原子 PR 同时改本表、实现与 `session-contract.test.js`（`activities.test.js` 按需）；`frozen-set-regression.test.js` 的 owner 缺口见 §16-H。
+凡将来需要把上述任一派生值落成会话状态（例如把认定状态或草稿写入会话），仍按 `docs/w1-pending-features.md` §8 流程先取得状态契约 owner 批准，并由同一原子 PR 同时改本表、实现与 `session-contract.test.js`、`activities.test.js`（按需）、`frozen-set-regression.test.js`（4 条 owner 已由 #28/#35 登记）。
 
 ## 已批准的状态契约变更（C-01 / C-02，待实现）
 
-> **状态**：2026-11-06 用户批准；截至 `720a546` **尚未实现**（契约行为同 `e4d8f49`；#28 只改 ownership）。本节描述的是**目标契约**，不是当前服务端行为。落地形态为**每项变更一个原子 PR**（作者 `contract`）：实现 + 本文件 + `tests/unit/session-contract.test.js` + `tests/unit/activities.test.js` 在同一 PR 内（后两者为 #28 已登记的共同 owner）；**不新增/扩大 owner**。`tests/unit/frozen-set-regression.test.js` 的 owner 缺口见 §16-H；`tests/integration/w1-flow.test.js` 与 C-01 的 `public/actions/flow.js` 切换按 §14.6.6/§14.6.8 的后续步骤，不塞进原子 PR。在实现合并前，任何页面/客户端不得按本节写入，服务端仍按上文「W1 冻结」的 36 / 19 / 7 / 11 行为校验。
+> **状态**：2026-11-06 用户批准；截至 `56daaae` **尚未实现**（契约行为同 `e4d8f49`；#28/#35 只改 ownership）。本节描述的是**目标契约**，不是当前服务端行为。落地形态为**每项变更一个原子 PR**（作者 `contract`）：实现 + 本文件 + `tests/unit/session-contract.test.js` + `tests/unit/activities.test.js` + `tests/unit/frozen-set-regression.test.js` 在同一 PR 内（4 条 owner 已由 #28/#35 登记）；**不新增/扩大 owner**。`tests/integration/w1-flow.test.js` 与 C-01 的 `public/actions/flow.js` 切换按 §14.6.6/§14.6.8 的后续步骤，不塞进原子 PR。在实现合并前，任何页面/客户端不得按本节写入，服务端仍按上文「W1 冻结」的 36 / 19 / 7 / 11 行为校验。
 
 ### C-01 `contactTodo` 迁移到 `record_activity(kind="contact-request")`
 
