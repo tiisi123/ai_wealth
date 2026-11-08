@@ -30,6 +30,13 @@ const OWNERSHIP = [
   ['src/interfaces/http/', ['contract']],
   ['src/compositionRoot.js', ['contract']],
   ['src/config/', ['contract']],
+  // A contract change is atomic: the code, the frozen contract document and the
+  // state-contract locks must land in one PR. These exact files are the only
+  // cross-domain files a contract PR may touch; both owners keep access.
+  ['docs/api-contract.md', ['docs', 'contract']],
+  ['tests/unit/session-contract.test.js', ['test-unit', 'contract']],
+  ['tests/unit/activities.test.js', ['test-unit', 'contract']],
+  ['tests/unit/frozen-set-regression.test.js', ['test-unit', 'contract']],
   ['src/components/ai-orchestration/', ['backend']],
   ['src/components/business-rules/', ['backend']],
   ['src/components/data-knowledge/', ['backend']],
