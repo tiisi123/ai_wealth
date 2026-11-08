@@ -46,7 +46,12 @@ window.WealthActions.registerDomain(["go-route","m-candidate-reason","m-compare-
       const ruleMatch={status:result.status,rule_id:result.rule_id,rule_version:result.rule_version,confidence:result.confidence,missing_fields:result.missing_fields};
       patch({ruleMatch,aiRequests:[...(session().aiRequests||[]),result.request_id]});
       if(result.status!=='MATCHED'){
-        openLanding('rule-confirmation');
+        // F-01：非 MATCHED 必须按规则匹配语义分流，不能一律落到「需要确认配置条件」。
+        // NEED_CONFIRMATION：缺字段/置信度不足，需补充输入 → rule-confirmation；
+        // UNSUPPORTED_RULE 及其它非 MATCHED（规则不支持 / 当前目标无法适用）→ 既有 rule-unsupported。
+        // 两类都在此 return false：不执行 generate_allocation / generate_candidates，
+        // 不生成或覆盖配置方案，也不打开成功结果页。
+        openLanding(result.status==='NEED_CONFIRMATION'?'rule-confirmation':'rule-unsupported');
         return false;
       }
       const allocation=await window.WealthApi.command('generate_allocation',{rule_id:result.rule_id,rule_version:result.rule_version,goal});
