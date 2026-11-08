@@ -488,6 +488,7 @@ test.describe('H-04 pc/research：POST /api/ai/generate（research_qa）三态',
     await installBackend(page);
     await openRoute(page, 'pc/research');
     // 真实动作：点击「开始研究」→ POST /api/ai/generate（受控成功契约）→ 写 researchAnswer。
+    await page.locator('#researchPrompt').fill('请说明宏观利率对固收产品的影响');
     await page.locator('[data-action="ask"]').click();
     await expect(page).toHaveURL(/#pc\/result/);
     // 回到研究页读取服务端已保存的 researchAnswer 与引用回指。
@@ -510,6 +511,7 @@ test.describe('H-04 pc/research：POST /api/ai/generate（research_qa）三态',
     // 受控契约：服务端无引用/证据，以 422 INSUFFICIENT_EVIDENCE 失败。
     await installBackend(page, { generateError: researchGenerateFailure() });
     await openRoute(page, 'pc/research');
+    await page.locator('#researchPrompt').fill('请说明宏观利率对固收产品的影响');
     await page.locator('[data-action="ask"]').click();
     await expect(page).toHaveURL(/#pc\/result/);
     const app = page.locator(APP);
