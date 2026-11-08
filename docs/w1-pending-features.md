@@ -12,7 +12,7 @@
 | DEMO 验收标准 | 架构文档 V2.3 第 11 章 A01–A35，是 DEMO 的通过条件；本清单的「职责页」与「关联 A 项」只做交叉索引 |
 | 台账 | 架构文档附录 A（R2–R62 逐条承载与判定归属），本清单不复制其表格 |
 | 本文性质 | 需求侧完成条件与验收归属；**不含测试代码**，不新增运行页面，不改 `CONTEXT.md`、`README.md`、架构文档、`tests/`、`src/`、`public/`、`scripts/`、`.github/`、`package.json` |
-| 基线 | `origin/main` = `56daaae`（#28 / #35 ownership 合并后；本清单首版写于基线 `53eb19c`，波次 1 后校正为 `d0b7620`，波次 3 起校正为 `cf07b1b`，波次 4 起校正为 `9411ead`，波次 5 起校正为 `5bcb1cc`，波次 5 收档起校正为 `e4d8f49`，`#28` 后为 `720a546`，`#35` 后为 `56daaae`，均见 §0.3 / §0.4 / §0.5 / §0.6 / §0.7）。所列「当前演示态」与 §15 矩阵的**代码事实仍以 `e4d8f49` 为准**（#28/#35 只改 `scripts/ci/check-ownership.mjs` 的 owner 登记，不改变页面/服务端行为）；「当前演示态」取自 `public/app.js`、`public/actions/*.js`、`public/actions-registry.js`、`tests/e2e/` 与 `src/`，不是人工观感描述 |
+| 基线 | `origin/main` = `a7414eb`（#28 / #35 ownership 与 #31 F-01 修复合并后；本清单首版写于基线 `53eb19c`，波次 1 后校正为 `d0b7620`，波次 3 起校正为 `cf07b1b`，波次 4 起校正为 `9411ead`，波次 5 起校正为 `5bcb1cc`，波次 5 收档起校正为 `e4d8f49`，`#28` 后为 `720a546`，`#35` 后为 `56daaae`，`#31` 后为 `a7414eb`，均见 §0.3 / §0.4 / §0.5 / §0.6 / §0.7）。所列「当前演示态」与 §15 矩阵的**代码事实以 `e4d8f49` 为基线、并已按 #31 更新 F-01 状态**；#28/#35 只改 ownership，不改变页面/服务端行为；「当前演示态」取自 `public/app.js`、`public/actions/*.js`、`public/actions-registry.js`、`tests/e2e/` 与 `src/`，不是人工观感描述 |
 
 ### 0.3 基线校正与波次 1 收工登记（2026-11-05 复核）
 
@@ -1096,7 +1096,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 | 22 | `m/wealth` | S：无；F：无；E：无 | S：产品卡 + `sale_status` 徽章；F：快照失败 → 共享数据加载失败；E：分类无产品 →「当前视图暂无产品」 | `GET /api/demo-data` | 无生产缺陷 | `test-e2e` | 否 |
 | 23 | `m/deposit` | **S/F/E：全有**（独立断言） | S：本息/利息/`calculation_id` 来自端点；F：400 → 真实错误、不显示金额；E：无挂牌利率 →「该期限暂无挂牌利率」 | `GET /api/demo-data`；`GET /api/calculations/deposit` | F-04：本金/期限固定；真库端到端未跑 | `test-e2e` | 否 |
 | 24 | `m/private` | S：无；F：无；E：无 | S：已认定 → `restricted_products`；F：未认定 → 明确拒绝；E：无受限产品 →「当前无受限产品」；联系成功显示 `activity_id` | `qualified_status`；命令 `record_activity(contact-request)`（C-01，待实现） | F-05 + C-01：页面未消费投影、`m-contact` 仍 PATCH | `test-e2e` + `test-unit`（activities） | **是**（认定来源） |
-| 25 | `m/allocation` | S：仅主链路（正常生成 + 撤权）；F：无；E：无 | S：`MATCHED` → 方案+候选；F：`UNSUPPORTED_RULE` →「没有匹配的配置规则」独立页，不覆盖旧方案；E：缺字段 → `NEED_CONFIRMATION` 且文案对应 `missing_fields` | `POST /api/ai/generate`（`rule_match`）；命令 `generate_allocation`、`generate_candidates`、`set_authorization` | F-01：`flow.js` 对所有非 `MATCHED` 都开 `rule-confirmation`，`rule-unsupported` 页面不可达；`NEED_CONFIRMATION` 仍不可达 | `test-e2e` + `test-unit`（三类状态映射） | 否 |
+| 25 | `m/allocation` | S：仅主链路（正常生成 + 撤权）；F：无；E：无 | S：`MATCHED` → 方案+候选；F：`UNSUPPORTED_RULE` →「没有匹配的配置规则」独立页，不覆盖旧方案；E：缺字段 → `NEED_CONFIRMATION` 且文案对应 `missing_fields` | `POST /api/ai/generate`（`rule_match`）；命令 `generate_allocation`、`generate_candidates`、`set_authorization` | **F-01 已由 #31（`a7414eb`）修复**：`flow.js` 已按状态分支（`NEED_CONFIRMATION` → `rule-confirmation`，`UNSUPPORTED_RULE`/其他 → `rule-unsupported`），不生成/覆盖方案；**仍需**补规则不匹配失败态 E2E；`NEED_CONFIRMATION` 在表单恒有默认值下仍需构造缺字段才可达 | `test-e2e` + `test-unit`（三类状态映射） | 否 |
 | 26 | `m/holdings` | S：有（独立）；F：无；E：无 | S：双分母集中度 + `estimated` 收益 + `calculation_id`；F：400/503 →「服务端计算失败」+错误码；E：`available=false` →「暂无持仓/未授权」，不显示 0 元 | `GET /api/calculations/portfolio` | 无生产缺陷；F/E 断言待补 | `test-e2e` + `test-unit`（复算） | 否 |
 | 27 | `m/candidates` | S：仅主链路；F：无；E：无 | S：排序/约束取 `reasons[]`；F：`candidate_explain` 422 → 真实错误；E：无候选 → 引导空态 | 命令 `generate_candidates`；`candidateCalculation`；`candidate_explain` | F-08b：`score` 缺失；F/E 断言待补 | `test-e2e` | 否 |
 | 28 | `m/compare` | S：仅主链路；F：无；E：无 | S：表格 + 不可排名说明；F：`save_comparison` 400/409；E：比较集空 → 空态 | 命令 `save_comparison`；`PATCH compareSet` | 无（#24 已消费可比性） | `test-e2e` | 否 |
@@ -1109,7 +1109,7 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 
 | 编号 | 页面 | 缺陷（代码事实） | 必须的修复 | Owner |
 |---|---|---|---|---|
-| F-01 | `m/allocation` | `public/actions/flow.js` 的 `m-generate-allocation` 对 `result.status !== 'MATCHED'` 一律 `openLanding('rule-confirmation')`；`public/app.js:1084` 的 `rule-unsupported` 规格没有任何调用方，属死代码。H-06 的「规则不匹配独立失败页」实际不可达 | 按 `result.status` 分支：`UNSUPPORTED_RULE` → `rule-unsupported`，`NEED_CONFIRMATION` → `rule-confirmation`；并补 E2E | `frontend-flow` |
+| F-01（已修复） | `m/allocation` | ~~`public/actions/flow.js` 对所有非 `MATCHED` 一律 `openLanding('rule-confirmation')`，`rule-unsupported` 无调用方~~ **#31（merge `a7414eb`）已修复**：`NEED_CONFIRMATION` → `rule-confirmation`，`UNSUPPORTED_RULE`/其他非 `MATCHED` → `rule-unsupported`；两条都 `return false`，不生成/覆盖方案 | 保持分支语义；补一条规则不匹配失败态 E2E | `frontend-flow`（已完成） |
 | F-02 | `m/fund` | `runRealAiTask()`（`public/app.js`）自行 `catch` 所有错误并统一 `openLanding('ai-error')`，P-12 的「当前客户无该产品持仓，无法生成诊断」分支不可达（#20 已在 PR 描述中登记） | 把真实 `error.code` 下推给调用方或让 `diagnosis` 分支自行渲染 422 专用失败态；不得改成通用成功 | `frontend-lead` |
 | F-03 | `m/insurance` | `m-policy` 动作已在 `diagnosis.js` 注册，但 `public/app.js` 内**没有任何元素带 `data-action="m-policy"`**；保障缺口/覆盖度仍无计算来源 | 提供可见入口并接 `insurance_coverage`；缺口无来源时显式空态（不得回填 72% / ¥4,000,000） | `frontend-lead`（+`data` 数据源） |
 | F-04 | `pc/product-deposit`、`m/deposit` | 测算输入固定为 500000 / 3 年；逐期限「该期限暂无挂牌利率」分支未实现；真库页面成功态未做过一次端到端 | 期限/本金可选、逐期限空态；在真库跑一次页面成功态并留证 | `frontend-lead` |
