@@ -100,10 +100,17 @@ const currentProductId = () => {
 };
 const readerDocumentRef = () => {
   const documents=session()._knowledgeDocuments || session().knowledgeDocuments || session().documents || [];
-  const doc=session().readerDocument || documents.find(item=>item.title==='中国权益市场月度策略') || documents[0] || {};
+  // F-11: the report summary must carry the document the reader page is
+  // actually showing. The selection is the same uiOf('document') key the
+  // reader's document navigation writes; with no selection it defaults to the
+  // first document, matching the page's own default. A row without an id
+  // leaves documentId empty so the summary entry refuses instead of silently
+  // summarizing an unbound document.
+  const picked=uiOf('document',(documents[0]&&(documents[0].document_id||documents[0].id))||'');
+  const doc=(picked&&documents.find(item=>(item.document_id||item.id)===picked))||documents[0]||{};
   return {
-    documentId:doc.document_id || doc.id || session().readerDocumentId || '',
-    sourceIds:idList(doc.source_ids || doc.source_id || session().readerSourceIds).filter(Boolean)
+    documentId:doc.document_id || doc.id || '',
+    sourceIds:idList(doc.source_ids || doc.source_id).filter(Boolean)
   };
 };
 function showActionError(error){
@@ -219,6 +226,66 @@ function startServiceHealth(){
   })();
   return SERVICE_HEALTH.promise;
 }
+// P-01 / F-10: the seven /ready checks are exposed read-only by
+// GET /api/health/checks. The page consumes that endpoint directly; values are
+// only what the service returned, a missing check stays 未报告, and a failing
+// check is shown as 未就绪 — never upgraded to healthy in the browser.
+const READY_CHECKS = { status: 'idle', promise: null, body: null, error: '' };
+function ensureReadyChecks(){
+  if(READY_CHECKS.status==='pending') return READY_CHECKS.promise;
+  if(READY_CHECKS.status==='idle') startReadyChecks();
+  return READY_CHECKS.promise;
+}
+function startReadyChecks(){
+  READY_CHECKS.status='pending';
+  READY_CHECKS.error='';
+  READY_CHECKS.promise=(async()=>{
+    try{
+      const response=await fetch('/api/health/checks',{headers:{accept:'application/json'}});
+      const body=await response.json().catch(()=>null);
+      if(!response.ok){
+        READY_CHECKS.status='error';
+        READY_CHECKS.body=null;
+        READY_CHECKS.error=`GET /api/health/checks → HTTP ${response.status}${body?.error?.message?`：${body.error.message}`:''}`;
+      }else if(!body||typeof body!=='object'||!body.checks||typeof body.checks!=='object'){
+        READY_CHECKS.status='error';
+        READY_CHECKS.body=null;
+        READY_CHECKS.error='GET /api/health/checks 返回内容缺少 checks，无法确认就绪状态';
+      }else{
+        READY_CHECKS.status='ok';
+        READY_CHECKS.body=body;
+      }
+    }catch(error){
+      READY_CHECKS.status='error';
+      READY_CHECKS.body=null;
+      READY_CHECKS.error=`GET /api/health/checks 请求失败：${error?.message||'网络错误'}`;
+    }
+    if(route()==='pc/architecture') render();
+    return READY_CHECKS;
+  })();
+  return READY_CHECKS.promise;
+}
+function readyChecksCard(){
+  const rc=READY_CHECKS;
+  if(rc.status==='pending') return `<div class="callout">正在读取就绪检查（GET /api/health/checks）…</div>`;
+  if(rc.status==='error') return `<div class="callout warn"><b>就绪检查不可用</b><p>GET /api/health/checks 未返回成功响应，本页不展示任何默认就绪状态，也不把缺失的检查项当作已通过。</p><p class="muted">${esc(rc.error||'')}</p></div>`;
+  const body=rc.body||{};
+  // The seven checks are the exact set healthService.ready() publishes.
+  const READY_CHECK_LABELS=[['database','数据库'],['shared_document_store','共享文档存储'],['knowledge','知识库'],['rules','规则目录'],['model','AI 生成服务'],['contract','前后端契约'],['data_mode','数据模式']];
+  const checks=body.checks||{};
+  const cells=READY_CHECK_LABELS.map(([key,label])=>{
+    const v=checks[key];
+    return {label,text:v===true?'就绪':v===false?'未就绪':'未报告',tone:v===true?'green':v===false?'red':'blue'};
+  });
+  const failing=cells.filter(c=>c.tone==='red').map(c=>c.label);
+  const ready=body.ready===true;
+  const cell=(c)=>`<div class="mini-stat"><small class="muted">${esc(c.label)}</small><h3>${esc(c.text)}</h3>${c.tone==='green'?'':statusBadge(c.text,c.tone==='red'?'red':'orange')}</div>`;
+  const summary=`<p class="muted">7 项 checks 取自 GET /api/health/checks（对 GET /ready 就绪判定的只读暴露）· 生成时间 ${formatTime(body.generated_at)} · 服务端汇总 ${ready?'ready=true（全部通过）':'ready=false（存在未通过项）'}。本页不推断未返回的检查项。</p>`;
+  if(!ready){
+    return `<div class="callout warn"><b>应用节点未就绪</b><p>服务端就绪汇总为 ready=false${failing.length?`，未通过项：${esc(failing.join('、'))}`:''}。未就绪期间应用服务会以 HTTP 503 拒绝业务请求（GET /ready 同源判定），本页只如实展示服务端返回的检查结果。</p></div><div class="grid two">${cells.map(cell).join('')}</div>${summary}`;
+  }
+  return `<div class="grid two">${cells.map(cell).join('')}</div>${summary}`;
+}
 function apiStamp(){
   const health=SERVICE_HEALTH.health||{};
   const model=health.dependencies?.model||{};
@@ -242,7 +309,7 @@ function serviceSections(){
   const overall=String(svc.health.status||'');
   const tone=overall==='ok'?'green':'orange';
   return {ok:true,badge:overall?overall:'未报告',tone,
-    text:`GET /api/health 已返回：服务状态 ${esc(overall||'—')}，生成时间 ${formatTime(svc.health.generated_at)}。逐项就绪判定由 GET /ready 提供，属 contract 后续任务，本页暂不展示。`};
+    text:`GET /api/health 已返回：服务状态 ${esc(overall||'—')}，生成时间 ${formatTime(svc.health.generated_at)}。节点级 7 项就绪判定见「节点就绪检查」卡片（GET /api/health/checks，只读暴露 GET /ready 的 checks）。`};
 }
 function serviceSummary(){
   const svc=SERVICE_HEALTH;
@@ -296,7 +363,7 @@ function serviceHealthCard(){
   // A healthy cell renders no badge, so its value is never squeezed out by its
   // own label; only failing / unreported cells carry one.
   const cell=(c)=>`<div class="mini-stat"><small class="muted">${esc(c.label)}</small><h3>${esc(c.text)}</h3>${c.tone==='green'?'':statusBadge(c.text,c.tone==='red'?'red':'orange')}</div>`;
-  return `<div class="grid two">${cells.map(cell).join('')}</div><p class="muted">dependencies 来自 GET /api/health；GET /ready 的 7 项 checks 与真实 503 处理属 contract 后续任务，本页不展示、也不推断未返回的就绪标记。未由服务端提供的指标（如调用量、专业评测通过率）一律不展示。</p>`;
+  return `<div class="grid two">${cells.map(cell).join('')}</div><p class="muted">dependencies 来自 GET /api/health；节点级 7 项就绪判定（/ready checks）由下方「节点就绪检查」卡片消费 GET /api/health/checks 展示，本页不推断未返回的就绪标记。未由服务端提供的指标（如调用量、专业评测通过率）一律不展示。</p>`;
 }
 // /api/health publishes the model dependency as `configured`, not `ready`, so it
 // is mapped explicitly; anything else is reported as 未报告.
@@ -329,6 +396,31 @@ function calcQuery(params){
   });
   return q.toString();
 }
+// F-04: the deposit calculation inputs are real page inputs. Principal and
+// years come from the visible 测算输入 fields (uiState, per route); the listed
+// rate comes from the server product snapshot only. A field the user cleared
+// or filled with an invalid value is NOT repaired and NOT silently reset to
+// the default: the request simply is not issued and the page shows its
+// explicit empty state instead of a fabricated success. Only a never-touched
+// field starts from the documented default so the first render still asks the
+// server (kept green by the P-04 three-state E2E).
+const DEPOSIT_PRINCIPAL_INPUT='depositPrincipal';
+const DEPOSIT_YEARS_INPUT='depositYears';
+const DEPOSIT_INPUT_DEFAULTS={principal:500000,years:3};
+function depositRawInput(key){
+  const page=(session().uiState||{})[route()]||{};
+  const v=page[key];
+  return v===undefined?null:String(v);
+}
+function depositInputValue(key,defaultValue){
+  const raw=depositRawInput(key);
+  return raw==null?defaultValue:numOrNull(raw);
+}
+function depositInputRow(){
+  const principal=depositRawInput(DEPOSIT_PRINCIPAL_INPUT)??String(DEPOSIT_INPUT_DEFAULTS.principal);
+  const years=depositRawInput(DEPOSIT_YEARS_INPUT)??String(DEPOSIT_INPUT_DEFAULTS.years);
+  return `<div class="form-grid"><label>本金（元）<input type="number" min="1" step="1000" data-ui-change="${DEPOSIT_PRINCIPAL_INPUT}" value="${esc(principal)}"/></label><label>期限（年）<input type="number" min="1" step="1" data-ui-change="${DEPOSIT_YEARS_INPUT}" value="${esc(years)}"/></label></div><p class="muted">本金与期限是本页的测算输入（初始 500000 / 3 年，可修改后重新计算）；挂牌年利率只取服务端产品快照，本页不套用默认利率，本息金额只来自服务端计算结果。</p>`;
+}
 function depositServerInput(){
   const p=productOf('deposit');
   if(!p) return null;
@@ -340,13 +432,23 @@ function depositServerInput(){
   // validation decides (VALIDATION_ERROR), and the page shows that error.
   const raw=p.annual_rate;
   if(raw===null||raw===undefined||raw==='') return null;
-  const rate=typeof raw==='number'&&Number.isFinite(raw)?raw*100:raw;
-  return {principal:500000,annual_rate:rate,years:3,rate_unit:'percent',product_id:p.id};
+  // Unit bookkeeping for the request (not a business calculation): the
+  // contract wants percent as 2.15 (rate_unit=percent). In database mode the
+  // snapshot rate arrives as a pg NUMERIC string ("0.0215"); it is parsed only
+  // to be expressed in the declared unit. A value that cannot be parsed is NOT
+  // repaired here — it is sent as-is so the server's own validation decides
+  // (VALIDATION_ERROR) and the page shows that real error.
+  const rawNum=numOrNull(raw);
+  const rate=rawNum!=null?rawNum*100:raw;
+  const principal=depositInputValue(DEPOSIT_PRINCIPAL_INPUT,DEPOSIT_INPUT_DEFAULTS.principal);
+  const years=depositInputValue(DEPOSIT_YEARS_INPUT,DEPOSIT_INPUT_DEFAULTS.years);
+  if(principal==null||principal<=0||years==null||years<=0) return null;
+  return {principal,annual_rate:rate,years,rate_unit:'percent',product_id:p.id};
 }
 function depositNumericProblem(){
   const p=productOf('deposit');
   if(!p||p.annual_rate===null||p.annual_rate===undefined||p.annual_rate==='') return '';
-  if(typeof p.annual_rate!=='number') return '服务端产品快照以字符串（NUMERIC）返回挂牌年利率，服务端只读计算拒绝该输入，因此未返回本息。页面不会在浏览器把字符串转换成数字来计算。';
+  if(numOrNull(p.annual_rate)==null) return '服务端产品快照的挂牌年利率不是可解析的数值，本页无法把它换算成请求声明的利率单位，服务端因此没有返回该期限的计息结果。';
   return '';
 }
 // The endpoints read PostgreSQL data, where NUMERIC is returned as a string.
@@ -363,7 +465,7 @@ function portfolioNumericProblem(){
   const count=bad.length;
   return `${count} 笔持仓的金额由数据库以字符串（NUMERIC）返回，服务端持仓计算拒绝该输入，因此未返回任何收益或集中度。页面不会在浏览器把它转换成数字来补算。`;
 }
-function ensureCalc(kind,params){
+function ensureCalc(kind,params,inputKey){
   const store=CALC_STORES[kind];
   if(!store) return null;
   // Both endpoints resolve the caller's authorization from the shared session
@@ -372,17 +474,29 @@ function ensureCalc(kind,params){
   // fix, so the read waits for the session instead of inventing a result.
   const sessionId=sessionApi()?.sessionId?.();
   if(!sessionApi()?.isConnected?.()||!sessionId) return null;
+  // F-04: read-only calculations whose inputs come from real page inputs pass
+  // an inputKey. When the current input no longer matches the one the cached
+  // (or in-flight) result belongs to, the store is discarded and re-read; a
+  // superseded in-flight response is dropped on landing so the page can never
+  // show a result that belongs to an input the user has already changed.
+  if(inputKey!==undefined&&store.inputKey!==inputKey){
+    store.inputKey=inputKey;
+    store.seq=(store.seq||0)+1;
+    store.status='idle'; store.promise=null; store.key=''; store.data=null; store.error='';
+  }
   const endpoint=calcEndpoint(kind);
   const query=calcQuery({...params,session_id:sessionId});
   const key=`${endpoint}?${query}`;
   if(store.status==='pending'||store.status==='ok'||store.status==='unsupported') return store.promise;
   if(store.status==='error'&&store.key===key) return store.promise;
   store.status='pending'; store.key=key; store.error=''; store.data=null;
+  const seq=store.seq||0;
   store.promise=(async()=>{
     const suffix=query?`?${query}`:'';
     try{
       const response=await fetch(`${endpoint}${suffix}`,{headers:{accept:'application/json'}});
       const body=await response.json().catch(()=>null);
+      if((store.seq||0)!==seq) return store;
       if(response.ok&&body&&typeof body==='object'){
         store.status='ok'; store.data=body;
       }else if(response.status===404||response.status===501){
@@ -395,6 +509,7 @@ function ensureCalc(kind,params){
         store.error=`GET ${endpoint} → HTTP ${response.status}${body?.error?.code?` ${body.error.code}`:''}${body?.error?.message?`：${body.error.message}`:''}`;
       }
     }catch(error){
+      if((store.seq||0)!==seq) return store;
       store.status='error'; store.data=null;
       store.error=`GET ${endpoint} 请求失败：${error?.message||'网络错误'}`;
     }
@@ -441,8 +556,13 @@ function pageArchitecture(){
   // Kicking the read here (not at boot) keeps every other route free of an
   // extra request; a second render reuses the in-flight promise.
   ensureServiceHealth();
+  // F-10: the same page also consumes the 7 /ready checks exposed by
+  // GET /api/health/checks, so the real node readiness (and its failure
+  // state) is visible instead of being summarized away.
+  ensureReadyChecks();
   const blocks=[
     {title:'服务健康度',head:serviceHealthCard()},
+    {title:'节点就绪检查',head:readyChecksCard()},
     {title:'服务字段',head:serviceSummary()}
   ];
   const main=svc.ok
@@ -507,7 +627,7 @@ const productMeta = (id) => ((sessionApi()?.HOLDING_BY_PRODUCT||{})[id] || null)
 // value the service did not return is shown as 未提供 / 空态 instead of a default.
 // ---------------------------------------------------------------------------
 const PRODUCT_CATALOG = { status: 'idle', promise: null, body: null, error: '' };
-const PRODUCT_CATALOG_ROUTES = new Set(['pc/product-fund','pc/product-insurance','pc/product-wealth','pc/product-deposit','m/wealth','pc/supply','pc/library']);
+const PRODUCT_CATALOG_ROUTES = new Set(['pc/product-fund','pc/product-insurance','pc/product-wealth','pc/product-deposit','pc/product-private','m/private','m/insurance','m/wealth','pc/supply','pc/library']);
 // Only the live session map (replaced in place by session-sync.js from
 // /api/demo-data) is read here; the pre-sync DemoSession seed is not server data.
 function serverProductRows(type){
@@ -647,26 +767,34 @@ function depositResultBody(body){
 }
 function depositCard(title,{emptyText,pendingText}){
   const dep=productOf('deposit');
+  // F-04: the rate is a server fact (missing → the original rate empty state,
+  // byte-for-byte), while principal/term are this page's real inputs. A missing
+  // or invalid input keeps its own explicit empty state — the calculation is
+  // not issued at all, so no fabricated success can appear.
+  const rateReady=!!dep&&dep.annual_rate!==null&&dep.annual_rate!==undefined&&dep.annual_rate!=='';
   const input=depositServerInput();
-  if(!dep||!input){
+  if(!dep||!rateReady){
     return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge('空态','blue')}</div><div class="callout"><b>该期限暂无挂牌利率</b><p>GET /api/demo-data 没有返回可用的存款产品与挂牌年利率，本页不套用默认利率，也不展示任何本息金额。</p></div></div>`;
   }
-  ensureCalc('deposit',input);
+  if(!input){
+    return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge('空态','blue')}</div>${depositInputRow()}<div class="callout"><b>测算输入未填写或无效</b><p>本金与期限须为正数，本页才会发起服务端存款本息计算。当前输入无效，未发起计算、不展示任何本息金额，也不回退到默认输入或任何预置结果。</p></div></div>`;
+  }
+  ensureCalc('deposit',input,`principal=${input.principal}&years=${input.years}`);
   const store=CALC_STORES.deposit;
   const view=calcStateView(store,{what:'存款到期本息'});
   if(view){
     const tone=view.tone==='red'?'red':'blue';
     if(view.badge==='读取中'){
-      return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge('读取中',tone)}</div><div class="callout">${esc(pendingText||'正在读取服务端存款本息计算…')}</div></div>`;
+      return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge('读取中',tone)}</div>${depositInputRow()}<div class="callout">${esc(pendingText||'正在读取服务端存款本息计算…')}</div></div>`;
     }
-    return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge(view.badge,tone)}</div><div class="callout ${view.tone==='red'?'warn':''}">${view.lead}${view.body}</div></div>`;
+    return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge(view.badge,tone)}</div>${depositInputRow()}<div class="callout ${view.tone==='red'?'warn':''}">${view.lead}${view.body}</div></div>`;
   }
   const result=store.data?.result||{};
   if(!result||result.maturity_amount==null||result.interest==null){
     const note=depositNumericProblem();
-    return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge('无挂牌利率','blue')}</div><div class="callout"><b>${esc(emptyText||'该期限暂无挂牌利率')}</b><p>服务端没有返回该期限的计息结果，本页不展示任何本息金额，也不套用默认利率。</p>${note?`<p class="muted">${esc(note)}</p>`:''}</div></div>`;
+    return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge('无挂牌利率','blue')}</div>${depositInputRow()}<div class="callout"><b>${esc(emptyText||'该期限暂无挂牌利率')}</b><p>服务端没有返回该期限的计息结果，本页不展示任何本息金额，也不套用默认利率。</p>${note?`<p class="muted">${esc(note)}</p>`:''}</div></div>`;
   }
-  return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge('服务端计算结果','green')}</div>${depositResultBody(store.data)}<div class="callout warn">利率取自服务端产品快照（${esc(dep.name||'')} · 数据时点 ${esc(literalTime(dep.source_timestamp)||'—')}）；到期本息为单利测算，不构成收益承诺。</div></div>`;
+  return `<div class="card"><div class="card-head"><h2>${esc(title)}</h2>${statusBadge('服务端计算结果','green')}</div>${depositInputRow()}${depositResultBody(store.data)}<div class="callout warn">利率取自服务端产品快照（${esc(dep.name||'')} · 数据时点 ${esc(literalTime(dep.source_timestamp)||'—')}）；到期本息为单利测算，不构成收益承诺。</div></div>`;
 }
 
 function productPage(type){
@@ -1119,10 +1247,80 @@ function pageWriting(){
   return pageHeading('AI WRITING','智能写作','从研究计划到证据检索、章节审阅和终稿审核，让写作过程可回看、可校验。',btn('模板管理','templates','')+btn('新建写作任务','new-writing','primary'))+`<div class="grid main-aside"><div class="stack"><div class="card"><div class="card-head"><div><h2>创建研究产物</h2><p class="muted">选择写作类型后，下方任务会一起切换。</p></div>${statusBadge('当前：'+kind,'blue')}</div><div class="grid three">${Object.keys(kinds).map(k=>`<button class="card" data-action="pick-ui" data-ui-key="writingKind" data-ui-value="${esc(k)}" style="text-align:left;${k===kind?'border-color:var(--blue);background:#ebf1ff':''}"><span class="metric-icon">${icon(k==='定时写作'?'clock':k==='结构化一页纸'?'file':'spark')}</span><h3 class="section-space">${esc(k)}</h3><p class="muted">${esc(kinds[k].desc)}</p></button>`).join('')}</div></div><div class="card"><div class="card-head"><h2>当前任务：${esc(cur.task)}</h2>${statusBadge('待生成','orange')}</div><div class="timeline"><div class="timeline-item"><span class="step-circle current">1</span><div class="step-copy"><b>研究计划</b><p>点击「新建写作任务」后由应用服务生成草稿并写入本次结果页。</p></div></div><div class="timeline-item"><span class="step-circle">2</span><div class="step-copy"><b>大纲生成</b><p>由下一次写作调用产出，本页不展示预置大纲。</p></div></div><div class="timeline-item"><span class="step-circle">3</span><div class="step-copy"><b>关键观点确认</b><p>需研究员在草稿产出后确认。</p>${btn('打开审阅','review-writing','small')}</div></div><div class="timeline-item"><span class="step-circle">4</span><div class="step-copy"><b>终稿与发布审核</b><p>待完成</p></div></div></div></div></div><aside class="stack"><div class="card"><div class="card-head"><h2>质量控制</h2>${statusBadge('未生成','blue')}</div><div class="callout">质控计数没有服务端来源，本页不展示「18/18」「26/28」等演示徽章。</div></div><div class="card"><div class="card-head"><h2>可复用资产</h2></div><div class="chips"><span class="chip">${esc(kind)}模板</span></div><p class="muted">模板管理与章节审阅在当前 W1 范围尚未实现，点击会显示「W1 未实现」失败态。</p></div></aside></div>`;
 }
 
+// F-05 (P-05)：私行两页消费 GET /api/demo-data 只读投影里的 qualified_status。
+// 页面永不写该字段，也绝不用 authorized 代替认定：只有明确的 QUALIFIED 事实才
+// 放行门禁；NOT_QUALIFIED 是显式拒绝；其余（快照缺 customer.qualified 认定来源）
+// 一律显式「无权威来源」空态。restricted_products 在 W1 没有服务端来源，因此即使
+// 已认定也只显示「当前无受限产品」空态，不用演示私行产品补位。
+function qualifiedProjection(){
+  const body=PRODUCT_CATALOG.status==='ok'?PRODUCT_CATALOG.body:null;
+  const projection=body?.readonly_projections?.qualified_status;
+  return projection&&typeof projection==='object'?projection:null;
+}
+function privateGateView(){
+  const projection=qualifiedProjection();
+  if(!projection){
+    return {badge:'无权威来源',tone:'blue',
+      lead:'<b>认定状态无权威来源</b>',
+      body:'<p>GET /api/demo-data 的只读投影没有返回 qualified_status，本页不放行任何受限内容，也不把当前会话当作已认定。</p>'};
+  }
+  const status=String(projection.status||'UNKNOWN');
+  const basis=projection.basis?`认定来源：${projection.basis}`:'认定来源：无（产品快照没有 customer.qualified 字段）';
+  if(status==='QUALIFIED'){
+    return {badge:'已认定',tone:'green',
+      lead:'<b>合格投资者认定：已认定</b>',
+      body:`<p>服务端只读投影返回 qualified_status=QUALIFIED，受限内容门禁放行（${esc(basis)}）。</p><p>受限产品清单（restricted_products）在当前服务端没有来源，因此显示空态：本页不展示任何私行产品详情，也不用演示产品补位。</p>`};
+  }
+  if(status==='NOT_QUALIFIED'){
+    return {badge:'未认定',tone:'red',
+      lead:'<b>未完成合格投资者认定</b>',
+      body:`<p>服务端只读投影返回 qualified_status=NOT_QUALIFIED（${esc(basis)}）。私募基金、信托和专户产品详情仅在准入完成且授权范围内展示，本页不返回任何部分内容。</p>`};
+  }
+  return {badge:'无权威来源',tone:'blue',
+    lead:'<b>认定状态无权威来源</b>',
+    body:`<p>服务端只读投影返回 qualified_status=${esc(status)}（unavailable_reason：${esc(projection.unavailable_reason||'未返回')}）：产品快照没有 customer.qualified 认定来源。本页不放行受限内容，不把「未认定」当作「已认定」，也不用授权状态代替认定结论。</p>`};
+}
 function pageProductPrivateRestricted(){
-  return pageHeading('PRIVATE BANK','私行产品洞察','面向完成合格投资者认定、具备相应准入资格的用户展示受限产品材料。',btn('查看办理指引','m-qualification','primary'))+`<div class="restricted">${icon('lock')}<h2>请先完成合格投资者认定</h2><p>当前演示身份未完成认定。私募基金、信托和专户产品详情仅在准入完成且授权范围内展示。</p>${btn('查看办理指引','m-qualification','primary')}</div>`;
+  ensureProductCatalog();
+  const catalog=productCatalogView();
+  const gate=catalog||privateGateView();
+  const gateBody=catalog
+    ? `<div class="callout ${catalog.tone==='red'?'warn':''}">${catalog.lead}${catalog.body}</div>`
+    : `<div class="restricted">${icon('lock')}<h2>${gate.lead}</h2>${gate.body}${btn('查看办理指引','m-qualification','primary')}</div>`;
+  return pageHeading('PRIVATE BANK','私行产品洞察','面向完成合格投资者认定、具备相应准入资格的用户展示受限产品材料。',btn('查看办理指引','m-qualification','primary'))+`<div class="card"><div class="card-head"><h2>受限内容门禁（GET /api/demo-data · readonly_projections.qualified_status）</h2>${statusBadge(gate.badge,gate.tone)}</div>${gateBody}</div>`;
 }
 
+// F-02 / P-12：AI 生成失败的 landing 规格。失败时 runRealAiTask 已把真实
+// 错误（researchRefusal：code / status / message / request_id）与失败的任务
+// 类型（aiTask）写入 landing；结果页据此展示任务专属失败文案，而不是只给
+// 通用文案。diagnosis_explain 的 422 INSUFFICIENT_EVIDENCE 显示「当前客户
+// 无该产品持仓，无法生成诊断」。所有分支都保持失败态：不写成功结果、
+// 不显示任何生成内容。
+function aiErrorSpec(s){
+  const refusal=(s.landing&&s.landing.id==='ai-error'&&s.landing.researchRefusal)||null;
+  const base={
+    title:'AI 生成失败',kicker:'AI ERROR',
+    summary:s.promptError||'生成或 Embedding 服务未就绪，系统没有使用预置答案推进流程。请检查会话状态、证据范围或生成服务配置。',
+    facts:[['状态',s.aiStatus||'FAILED'],['请求',s.lastQuestion||s.landing?.query||'当前任务'],['处理','未写入成功结果']],
+    next:['返回上一页'],nextActions:[['back-from','返回','primary']]
+  };
+  if(!refusal) return base;
+  const facts=base.facts.concat([
+    ['错误码',refusal.code],
+    ['HTTP 状态',refusal.status==null?'未返回':String(refusal.status)],
+    ['服务端消息',refusal.message],
+    ['本次 request_id',refusal.submitted||'未返回']
+  ]);
+  const task=s.landing?.aiTask||'';
+  if(task==='diagnosis_explain'&&(refusal.code==='INSUFFICIENT_EVIDENCE'||refusal.status===422)){
+    return Object.assign({},base,{
+      title:'诊断未生成',
+      summary:`当前客户无该产品持仓，无法生成诊断。服务端返回 ${refusal.status==null?'422':String(refusal.status)} ${refusal.code}（${refusal.message}），系统没有写入任何诊断结果，也没有展示成功状态；请确认该产品的真实持仓或授权状态后重试。`,
+      facts
+    });
+  }
+  return Object.assign({},base,{facts});
+}
 function landingSpec(id){
   const s=session();
   const g=s.goal||sessionApi()?.DEFAULT_GOAL||{};
@@ -1158,7 +1356,7 @@ function landingSpec(id){
     // 页面据此只说明「未匹配」，不提示补充字段。
     'rule-unsupported':{title:'没有匹配的配置规则',kicker:'RULE MATCH',summary:'规则匹配结果为 UNSUPPORTED_RULE：当前目标与规则目录中的条件不匹配，程序没有执行任何规则，也没有生成或覆盖配置方案。请调整风险等级、投资期限或流动性需求后重新生成。',facts:[['规则匹配结果','UNSUPPORTED_RULE'],['规则',s.ruleMatch?.rule_id||'未选择规则'],['版本',s.ruleMatch?.rule_version||'暂无'],['当前目标',goalText()],['处理','未执行规则，未覆盖旧方案']],next:['返回配置'],nextActions:[['back-from','返回配置页','primary']]},
     'prompt-needed':{title:'请先输入问题',kicker:'问小财',summary:'用大白话描述你的理财问题后，系统会调用 AI 生成并返回证据与风险提示。',facts:[['示例','最近的市场变化会影响我的组合吗？'],['范围','已授权资料']],next:['返回助手'],nextActions:[['back-from','返回','primary']]},
-    'ai-error':{title:'AI 生成失败',kicker:'AI ERROR',summary:s.promptError||'生成或 Embedding 服务未就绪，系统没有使用预置答案推进流程。请检查会话状态、证据范围或生成服务配置。',facts:[['状态',s.aiStatus||'FAILED'],['请求',s.lastQuestion||s.landing?.query||'当前任务'],['处理','未写入成功结果']],next:['返回上一页'],nextActions:[['back-from','返回','primary']]},
+    'ai-error':aiErrorSpec(s),
     'action-error':{title:'操作未完成',kicker:'REQUEST ERROR',summary:s.promptError||'应用服务未确认本次操作，页面没有展示成功结果。',facts:[['处理','未展示成功结果'],['建议','检查服务状态后重试']],next:['返回上一页'],nextActions:[['back-from','返回','primary']]},
     'sync-error':{title:'共享数据加载失败',kicker:'SESSION ERROR',summary:s.promptError||'会话或业务数据未能从应用服务加载，演示常量不会作为真实加载结果。',facts:[['处理','真实数据未加载成功'],['建议','检查应用服务后刷新重试']],next:['返回上一页'],nextActions:[['back-from','返回','primary']]},
     'm-review-detail':{title:'本周组合复盘',kicker:'投后陪伴',summary:'复盘数字取自服务端只读计算（演示数据 · AI_MODE=fixture），不是真实账务收益。',facts:[['区间','至 '+(s.asOf||'—')],['提示','复盘材料仅供客户经理内部使用']],next:['返回陪伴页'],nextActions:[['go-companion','返回投后陪伴','primary']]},
@@ -1239,7 +1437,11 @@ function mobileFund(){
   const s=session();
   const saved=s.diagnosis;
   const view=viewOf()||'我的持仓';
-  const held=(sessionApi()?.HOLDINGS||[]).map(h=>h.id);
+  // F-08a: holdings come from GET /api/demo-data via session-sync, whose rows
+  // carry product_id (the pre-sync local seed used id). Both shapes are read
+  // so the diagnosable set is the real held set; a product without a real
+  // holding stays explicitly non-diagnosable (无持仓不可诊断, no diagnose button).
+  const held=(sessionApi()?.HOLDINGS||[]).map(h=>h.product_id||h.id);
   const all=productRows().filter(p=>p.type==='基金').map((p)=>{
     const isHeld=held.includes(p.id);
     const cats=['热门基金'].concat(isHeld?['我的持仓']:[]);
@@ -1248,12 +1450,42 @@ function mobileFund(){
   const empty=view==='我的持仓'?'当前客户没有基金持仓，暂无可诊断基金。':'该分类暂无产品';
   return `<div class="between"><div><div class="eyebrow">AI DIAGNOSIS</div><h1>基金诊断</h1></div><button class="icon-btn" data-action="mobile-search">${icon('search')}</button></div><p class="sub">产品来自 GET /api/demo-data；只有当前客户持有的产品才可生成诊断。</p>${saved?`<div class="callout good session-flag">已保存诊断：${esc(saved.name)} · 数据时点 ${esc(saved.asOf)} · 回撤 ${esc(saved.drawdown)}</div>`:''}<div class="mobile-tags">${['我的持仓','热门基金'].map(x=>tabBtn(x,'我的持仓')).join('')}</div>${all.map(x=>fundCard(x,saved)).join('')||`<div class="card"><p>${esc(empty)}</p></div>`}<div class="callout good">${icon('info')} 当前视图：${esc(view)}。诊断会同时检查产品表现、行业暴露和你的持仓集中度。</div>${saved?`<div class="path-next">${btn('去做资产配置','go-allocation','primary full')}</div>`:''}`;
 }
-function mobileInsurance(){
-  const products=panelProducts('insurance');
-  if(!products.length){
-    return `<div class="eyebrow">INSURANCE</div><h1>保险保障检视</h1><p class="sub">把保障责任、缴费和待确认事项放在一处。</p><div class="card"><div class="callout warn"><b>未授权或暂无可展示保单</b><p>应用服务没有返回保单数据；保障缺口与待办没有服务端来源，本页不展示演示数值。</p></div></div>`;
+// F-03 (P-13)：保单与保障缺口消费 GET /api/demo-data 只读投影
+// readonly_projections.insurance_coverage。投影不可用（未授权 / 无保险产品 /
+// 读取失败）如实显示对应空态；缺口与覆盖度没有计算来源时显示投影自己的
+// coverage_gap 空态，不回填 72% / ¥4,000,000 等任何演示数值。本页不启动保单
+// 数据源；m-policy 提供可见入口，点击后由 diagnosis.js 的既有处理器按被点击
+// 产品的服务端保险事实渲染（无 product_id / 未知 id / 非保险产品 → 显式空态）。
+function insuranceCoverageCard(catalog){
+  if(catalog){
+    return `<div class="callout ${catalog.tone==='red'?'warn':''}">${catalog.lead}${catalog.body}</div>`;
   }
-  return `<div class="eyebrow">INSURANCE</div><h1>保险保障检视</h1><p class="sub">把保障责任、缴费和待确认事项放在一处。系统不替代健康告知、核保和理赔审核。</p><div class="card"><div class="card-head"><h2>我的保障</h2><p class="muted">来自 GET /api/demo-data</p></div><div class="callout warn"><b>暂未发现缺口</b><p>保障缺口与覆盖度没有服务端计算来源，本页不展示演示百分比。</p></div></div>${products.map(p=>`<div class="card"><div class="card-head"><h2>${esc(p.name)}</h2>${statusBadge('产品事实','blue')}</div>${productFactsCard(p)}${btn('查看保障详情','m-coverage','light full',p.id)}</div>`).join('')}`;
+  const body=PRODUCT_CATALOG.status==='ok'?PRODUCT_CATALOG.body:null;
+  const coverage=body?.readonly_projections?.insurance_coverage;
+  if(!coverage||typeof coverage!=='object'){
+    return `<div class="callout"><b>保单与保障缺口投影未返回</b><p>GET /api/demo-data 的只读投影没有返回 insurance_coverage，本页按无来源处理：不展示演示保单、保障缺口或覆盖度。</p></div>`;
+  }
+  if(coverage.available!==true){
+    const detail={
+      unauthorized:'共享会话未授权，服务端不返回保单与保障投影，也不返回部分内容。',
+      no_insurance_products:'产品快照中没有保险产品，当前无可展示的保单或保障事实。'
+    }[coverage.unavailable_reason];
+    return `<div class="callout warn"><b>${esc(coverage.message||'未授权或暂无可展示保单')}</b><p>${esc(detail||`投影不可用（${coverage.unavailable_reason||'未返回原因'}）。`)}</p></div>`;
+  }
+  const facts=Array.isArray(coverage.facts)?coverage.facts:[];
+  const gap=coverage.coverage_gap||{};
+  return `<p class="muted">来源 ${esc(coverage.source||'—')} · ${facts.length} 条产品级保险事实（fact_kind=product_fact，不是保单记录；保单号、生效日与理赔进度没有数据源）。</p><div class="callout warn"><b>${esc(gap.message||'暂无保障缺口计算口径')}</b><p>保障缺口与覆盖度没有服务端计算来源（unavailable_reason：${esc(gap.unavailable_reason||'未返回')}），本页不回填任何演示覆盖度或缺口金额，也不推断覆盖度。</p></div>`;
+}
+function mobileInsurance(){
+  ensureProductCatalog();
+  const catalog=productCatalogView();
+  const products=catalog?[]:panelProducts('insurance');
+  const gate=insuranceCoverageCard(catalog);
+  const heading=`<div class="eyebrow">INSURANCE</div><h1>保险保障检视</h1><p class="sub">把保障责任、缴费和待确认事项放在一处。系统不替代健康告知、核保和理赔审核。</p>`;
+  if(catalog||!products.length){
+    return heading+`<div class="card"><div class="card-head"><h2>我的保障</h2><p class="muted">readonly_projections.insurance_coverage</p></div>${gate}</div>${catalog?'':'<div class="card"><div class="callout warn"><b>未授权或暂无可展示保单</b><p>应用服务没有返回保险产品，产品事实列表为空；本页不展示演示保单。</p></div></div>'}`;
+  }
+  return heading+`<div class="card"><div class="card-head"><h2>我的保障</h2><p class="muted">readonly_projections.insurance_coverage</p></div>${gate}</div>${products.map(p=>`<div class="card"><div class="card-head"><h2>${esc(p.name)}</h2>${statusBadge('产品事实','blue')}</div>${productFactsCard(p)}${btn('查看保障详情','m-coverage','light full',p.id)}${btn('保单检视','m-policy','light full',p.id)}</div>`).join('')}`;
 }
 // P-14: 可售徽章只读服务端 sale_status。原来的徽章不看该字段，任何产品都显示「我行可售」；
 // 现在既没有该字段也不得显示可售，且明确给出「未提供」，不以默认值补齐。
@@ -1286,9 +1518,19 @@ function mobileWealth(){
 }
 function mobileDeposit(){
   const dep=productOf('deposit')||{};
-  return `<div class="eyebrow">DEPOSIT</div><h1>存款产品</h1><p class="sub">利率与期限来自服务端产品事实；到期本息由服务端只读计算接口给出。</p><div class="card"><div class="card-head"><h2>${esc(dep.name||'存款产品')}</h2>${statusBadge('演示桩 fixture','blue')}</div>${productFactsCard(dep)}</div>${depositCard('到期本息测算',{emptyText:'该期限暂无挂牌利率',pendingText:'正在读取服务端存款本息计算…'})}<p class="mobile-footer-note">本息为单利测算，按服务端返回的挂牌利率计算；提前支取与期限比较同样只使用服务端计算结果，浏览器不计算金额。</p>`;
+  return `<div class="eyebrow">DEPOSIT</div><h1>存款产品</h1><p class="sub">利率来自服务端产品事实，本金与期限是本页测算输入；到期本息由服务端只读计算接口给出。</p><div class="card"><div class="card-head"><h2>${esc(dep.name||'存款产品')}</h2>${statusBadge('演示桩 fixture','blue')}</div>${productFactsCard(dep)}</div>${depositCard('到期本息测算',{emptyText:'该期限暂无挂牌利率',pendingText:'正在读取服务端存款本息计算…'})}<p class="mobile-footer-note">本息为单利测算，按服务端返回的挂牌利率计算；提前支取与期限比较同样只使用服务端计算结果，浏览器不计算金额。</p>`;
 }
-function mobilePrivate(){const s=session(); return `<div class="eyebrow">PRIVATE BANK</div><h1>私行产品</h1><p class="sub">受限内容需要先完成资格确认和适当性校验。</p><div class="restricted">${icon('lock')}<h2>请先完成合格投资者认定</h2><p>当前账户未展示私募基金、信托和专户产品详情。完成认定后，产品说明书和募集材料才会在授权范围内展示。</p>${btn('查看办理指引','m-qualification','primary full')}${s.contactTodo?`<div class="callout good">已创建联系客户经理待办。</div>`:`<button class="link-btn" data-action="m-contact">联系客户经理</button>`}</div><div class="card"><div class="card-head"><h2>办理进度</h2>${statusBadge('空态','blue')}</div><div class="callout">合格投资者认定没有服务端可写状态，本页不展示演示办理进度。</div></div>`;}
+function mobilePrivate(){
+  const s=session();
+  // F-05 (P-05)：与 pc/product-private 消费同一 readonly qualified_status 投影。
+  ensureProductCatalog();
+  const catalog=productCatalogView();
+  const gate=catalog||privateGateView();
+  const gateBody=catalog
+    ? `<div class="callout ${catalog.tone==='red'?'warn':''}">${catalog.lead}${catalog.body}</div>`
+    : `${gate.body}${s.contactTodo?`<div class="callout good">已创建联系客户经理待办。</div>`:`<button class="link-btn" data-action="m-contact">联系客户经理</button>`}`;
+  return `<div class="eyebrow">PRIVATE BANK</div><h1>私行产品</h1><p class="sub">受限内容需要先完成资格确认和适当性校验。</p><div class="restricted">${icon('lock')}<h2>${gate.lead}</h2>${gateBody}${btn('查看办理指引','m-qualification','primary full')}</div><div class="card"><div class="card-head"><h2>认定状态（服务端只读投影）</h2>${statusBadge(gate.badge,gate.tone)}</div><div class="callout">本页门禁只读 GET /api/demo-data 的 readonly_projections.qualified_status；浏览器不可写认定状态，也不以授权状态代替认定。</div></div><div class="card"><div class="card-head"><h2>办理进度</h2>${statusBadge('空态','blue')}</div><div class="callout">合格投资者认定没有服务端可写状态，本页不展示演示办理进度。</div></div>`;
+}
 function mobileAllocation(){
   const s=session();
   const g=s.goal||sessionApi()?.DEFAULT_GOAL||{};
@@ -1612,7 +1854,10 @@ async function runRealAiTask(taskType, input, onSuccess, landingId='ask', contex
     // 拒答原因只随 landing 一起写入（landing 是 PATCH 白名单字段）：跳转到结果页后，
     // 研究页仍能读到本次失败的真实原因，而不是只能看到通用 ai-error。
     // 不新增会话状态 key——冻结的 36 key 契约不变。
-    openLanding('ai-error',{query:input.question||input.prompt||input.topic||'',researchRefusal:researchRefusal(error)});
+    // F-02 / P-12：aiTask 把失败的任务类型一并写入 landing，结果页据此渲染
+    // 任务专属失败态（例如 diagnosis_explain 的 422 INSUFFICIENT_EVIDENCE），
+    // 不再把 422 吞成无差别通用失败，也绝不写成功态。
+    openLanding('ai-error',{query:input.question||input.prompt||input.topic||'',researchRefusal:researchRefusal(error),aiTask:taskType});
   }
 }
 
