@@ -100,10 +100,17 @@ const currentProductId = () => {
 };
 const readerDocumentRef = () => {
   const documents=session()._knowledgeDocuments || session().knowledgeDocuments || session().documents || [];
-  const doc=session().readerDocument || documents.find(item=>item.title==='中国权益市场月度策略') || documents[0] || {};
+  // F-11: the report summary must carry the document the reader page is
+  // actually showing. The selection is the same uiOf('document') key the
+  // reader's document navigation writes; with no selection it defaults to the
+  // first document, matching the page's own default. A row without an id
+  // leaves documentId empty so the summary entry refuses instead of silently
+  // summarizing an unbound document.
+  const picked=uiOf('document',(documents[0]&&(documents[0].document_id||documents[0].id))||'');
+  const doc=(picked&&documents.find(item=>(item.document_id||item.id)===picked))||documents[0]||{};
   return {
-    documentId:doc.document_id || doc.id || session().readerDocumentId || '',
-    sourceIds:idList(doc.source_ids || doc.source_id || session().readerSourceIds).filter(Boolean)
+    documentId:doc.document_id || doc.id || '',
+    sourceIds:idList(doc.source_ids || doc.source_id).filter(Boolean)
   };
 };
 function showActionError(error){
@@ -620,7 +627,7 @@ const productMeta = (id) => ((sessionApi()?.HOLDING_BY_PRODUCT||{})[id] || null)
 // value the service did not return is shown as 未提供 / 空态 instead of a default.
 // ---------------------------------------------------------------------------
 const PRODUCT_CATALOG = { status: 'idle', promise: null, body: null, error: '' };
-const PRODUCT_CATALOG_ROUTES = new Set(['pc/product-fund','pc/product-insurance','pc/product-wealth','pc/product-deposit','pc/product-private','m/private','m/wealth','pc/supply','pc/library']);
+const PRODUCT_CATALOG_ROUTES = new Set(['pc/product-fund','pc/product-insurance','pc/product-wealth','pc/product-deposit','pc/product-private','m/private','m/insurance','m/wealth','pc/supply','pc/library']);
 // Only the live session map (replaced in place by session-sync.js from
 // /api/demo-data) is read here; the pre-sync DemoSession seed is not server data.
 function serverProductRows(type){
@@ -1355,7 +1362,11 @@ function mobileFund(){
   const s=session();
   const saved=s.diagnosis;
   const view=viewOf()||'我的持仓';
-  const held=(sessionApi()?.HOLDINGS||[]).map(h=>h.id);
+  // F-08a: holdings come from GET /api/demo-data via session-sync, whose rows
+  // carry product_id (the pre-sync local seed used id). Both shapes are read
+  // so the diagnosable set is the real held set; a product without a real
+  // holding stays explicitly non-diagnosable (无持仓不可诊断, no diagnose button).
+  const held=(sessionApi()?.HOLDINGS||[]).map(h=>h.product_id||h.id);
   const all=productRows().filter(p=>p.type==='基金').map((p)=>{
     const isHeld=held.includes(p.id);
     const cats=['热门基金'].concat(isHeld?['我的持仓']:[]);
@@ -1364,12 +1375,42 @@ function mobileFund(){
   const empty=view==='我的持仓'?'当前客户没有基金持仓，暂无可诊断基金。':'该分类暂无产品';
   return `<div class="between"><div><div class="eyebrow">AI DIAGNOSIS</div><h1>基金诊断</h1></div><button class="icon-btn" data-action="mobile-search">${icon('search')}</button></div><p class="sub">产品来自 GET /api/demo-data；只有当前客户持有的产品才可生成诊断。</p>${saved?`<div class="callout good session-flag">已保存诊断：${esc(saved.name)} · 数据时点 ${esc(saved.asOf)} · 回撤 ${esc(saved.drawdown)}</div>`:''}<div class="mobile-tags">${['我的持仓','热门基金'].map(x=>tabBtn(x,'我的持仓')).join('')}</div>${all.map(x=>fundCard(x,saved)).join('')||`<div class="card"><p>${esc(empty)}</p></div>`}<div class="callout good">${icon('info')} 当前视图：${esc(view)}。诊断会同时检查产品表现、行业暴露和你的持仓集中度。</div>${saved?`<div class="path-next">${btn('去做资产配置','go-allocation','primary full')}</div>`:''}`;
 }
-function mobileInsurance(){
-  const products=panelProducts('insurance');
-  if(!products.length){
-    return `<div class="eyebrow">INSURANCE</div><h1>保险保障检视</h1><p class="sub">把保障责任、缴费和待确认事项放在一处。</p><div class="card"><div class="callout warn"><b>未授权或暂无可展示保单</b><p>应用服务没有返回保单数据；保障缺口与待办没有服务端来源，本页不展示演示数值。</p></div></div>`;
+// F-03 (P-13)：保单与保障缺口消费 GET /api/demo-data 只读投影
+// readonly_projections.insurance_coverage。投影不可用（未授权 / 无保险产品 /
+// 读取失败）如实显示对应空态；缺口与覆盖度没有计算来源时显示投影自己的
+// coverage_gap 空态，不回填 72% / ¥4,000,000 等任何演示数值。本页不启动保单
+// 数据源；m-policy 提供可见入口，点击后由 diagnosis.js 的既有处理器按被点击
+// 产品的服务端保险事实渲染（无 product_id / 未知 id / 非保险产品 → 显式空态）。
+function insuranceCoverageCard(catalog){
+  if(catalog){
+    return `<div class="callout ${catalog.tone==='red'?'warn':''}">${catalog.lead}${catalog.body}</div>`;
   }
-  return `<div class="eyebrow">INSURANCE</div><h1>保险保障检视</h1><p class="sub">把保障责任、缴费和待确认事项放在一处。系统不替代健康告知、核保和理赔审核。</p><div class="card"><div class="card-head"><h2>我的保障</h2><p class="muted">来自 GET /api/demo-data</p></div><div class="callout warn"><b>暂未发现缺口</b><p>保障缺口与覆盖度没有服务端计算来源，本页不展示演示百分比。</p></div></div>${products.map(p=>`<div class="card"><div class="card-head"><h2>${esc(p.name)}</h2>${statusBadge('产品事实','blue')}</div>${productFactsCard(p)}${btn('查看保障详情','m-coverage','light full',p.id)}</div>`).join('')}`;
+  const body=PRODUCT_CATALOG.status==='ok'?PRODUCT_CATALOG.body:null;
+  const coverage=body?.readonly_projections?.insurance_coverage;
+  if(!coverage||typeof coverage!=='object'){
+    return `<div class="callout"><b>保单与保障缺口投影未返回</b><p>GET /api/demo-data 的只读投影没有返回 insurance_coverage，本页按无来源处理：不展示演示保单、保障缺口或覆盖度。</p></div>`;
+  }
+  if(coverage.available!==true){
+    const detail={
+      unauthorized:'共享会话未授权，服务端不返回保单与保障投影，也不返回部分内容。',
+      no_insurance_products:'产品快照中没有保险产品，当前无可展示的保单或保障事实。'
+    }[coverage.unavailable_reason];
+    return `<div class="callout warn"><b>${esc(coverage.message||'未授权或暂无可展示保单')}</b><p>${esc(detail||`投影不可用（${coverage.unavailable_reason||'未返回原因'}）。`)}</p></div>`;
+  }
+  const facts=Array.isArray(coverage.facts)?coverage.facts:[];
+  const gap=coverage.coverage_gap||{};
+  return `<p class="muted">来源 ${esc(coverage.source||'—')} · ${facts.length} 条产品级保险事实（fact_kind=product_fact，不是保单记录；保单号、生效日与理赔进度没有数据源）。</p><div class="callout warn"><b>${esc(gap.message||'暂无保障缺口计算口径')}</b><p>保障缺口与覆盖度没有服务端计算来源（unavailable_reason：${esc(gap.unavailable_reason||'未返回')}），本页不回填任何演示覆盖度或缺口金额，也不推断覆盖度。</p></div>`;
+}
+function mobileInsurance(){
+  ensureProductCatalog();
+  const catalog=productCatalogView();
+  const products=catalog?[]:panelProducts('insurance');
+  const gate=insuranceCoverageCard(catalog);
+  const heading=`<div class="eyebrow">INSURANCE</div><h1>保险保障检视</h1><p class="sub">把保障责任、缴费和待确认事项放在一处。系统不替代健康告知、核保和理赔审核。</p>`;
+  if(catalog||!products.length){
+    return heading+`<div class="card"><div class="card-head"><h2>我的保障</h2><p class="muted">readonly_projections.insurance_coverage</p></div>${gate}</div>${catalog?'':'<div class="card"><div class="callout warn"><b>未授权或暂无可展示保单</b><p>应用服务没有返回保险产品，产品事实列表为空；本页不展示演示保单。</p></div></div>'}`;
+  }
+  return heading+`<div class="card"><div class="card-head"><h2>我的保障</h2><p class="muted">readonly_projections.insurance_coverage</p></div>${gate}</div>${products.map(p=>`<div class="card"><div class="card-head"><h2>${esc(p.name)}</h2>${statusBadge('产品事实','blue')}</div>${productFactsCard(p)}${btn('查看保障详情','m-coverage','light full',p.id)}${btn('保单检视','m-policy','light full',p.id)}</div>`).join('')}`;
 }
 // P-14: 可售徽章只读服务端 sale_status。原来的徽章不看该字段，任何产品都显示「我行可售」；
 // 现在既没有该字段也不得显示可售，且明确给出「未提供」，不以默认值补齐。
