@@ -37,6 +37,13 @@ const OWNERSHIP = [
   ['tests/unit/session-contract.test.js', ['test-unit', 'contract']],
   ['tests/unit/activities.test.js', ['test-unit', 'contract']],
   ['tests/unit/frozen-set-regression.test.js', ['test-unit', 'contract']],
+  // A fixture-data baseline change is atomic: the SQL seed, the contract-owned
+  // JS fixtures and the acceptance checklist must land in one PR. These exact
+  // files are the only cross-domain files a contract PR may touch; the original
+  // owners keep access. Longest-prefix matching keeps the narrower rules above
+  // in force for every other path.
+  ['db/seeds/001_demo.sql', ['data', 'contract']],
+  ['docs/w1-pending-features.md', ['docs', 'contract']],
   ['src/components/ai-orchestration/', ['backend']],
   ['src/components/business-rules/', ['backend']],
   ['src/components/data-knowledge/', ['backend']],
