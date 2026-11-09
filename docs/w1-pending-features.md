@@ -560,30 +560,17 @@ W1 固定 `AI_MODE=fixture`，全部 AI 响应带 `execution_mode: "fixture"`，
 
 ## 5. 明确标注项
 
-### 5.1 fixture 知识库只有四个片段：`wealth` / `bondfund` / `cash` 的「证据不足」是【预期可见失败态】
+### 5.1 fixture 知识片段覆盖（W1 演示数据扩展后）
 
-**事实（代码）**：`fixtures/demoData.js` 与 `db/seeds/001_demo.sql` 的 `knowledge_chunks` 只有 4 条，`product_id` 分别为 `fund`、`wealthplus`、`insurance`、`deposit`。但 `products` 有 7 个 id：`wealth`、`fund`、`deposit`、`insurance`、`bondfund`、`wealthplus`、`cash`。`knowledgeRepository.search()` 的 `product_id = ANY(...)` 过滤为**无条件生效**。
+**事实（代码）**：`fixtures/demoData.js` 与 `db/seeds/001_demo.sql` 的知识片段已由 4 条扩展到 25 条、知识文档 12 份，覆盖 7 个原有产品 ID 各至少 2 条、新增产品、`pc/events` / `pc/macro` / `pc/industry` 三类专属片段（元数据带对应关键词）、报告阅读 / 智能写作 / 通用口径片段，以及 `product_id` 为空的通用片段。`knowledge_chunks` 的向量仍由 `scripts/seed/fixtureKnowledge.js` 在 `AI_MODE=fixture` 时确定性注入并激活 ACTIVE 版本，SQL seed 保持 `STAGING` / `pending-real-embedding`，W2 真实索引流程未被改写。这些向量是**确定性伪向量、不具备语义**，不得用于召回质量评测。
 
-**按任务类型分开结论**（两种结论都写进了验收口径，不得混为一谈）：
+**口径订正（本次扩展）**：原登记「`wealth` / `bondfund` / `cash` 因无专属片段而由**数据缺失自然触发** `422 INSUFFICIENT_EVIDENCE`」已不再成立——fixture 数据现已覆盖全部产品 ID。证据不足、超范围拒答、`503`、`409` 等**失败态仍必须可见**，现由 `tests/e2e` 的受控契约注入（`page.route` 注入真实错误包络）覆盖，页面断言 `error.code` 与「不伪造成功结果」的口径不变。`KNOWLEDGE_REQUIRED`（`research_qa` / `report_summary` / `writing_draft`）与 `KNOWLEDGE_OPTIONAL` 的编排校验逻辑未改。
 
-| 任务类型 | 知识要求 | `wealth` / `bondfund` / `cash` 上的实际结果 | 判定 |
-|---|---|---|---|
-| `research_qa`、`report_summary`、`writing_draft` | `KNOWLEDGE_REQUIRED` | 召不到片段 → `422 INSUFFICIENT_EVIDENCE`「当前任务没有足够的知识片段，已停止生成」 | **预期可见失败态**，不得视为流程断裂 |
-| `assistant_qa`、`diagnosis_explain`、`candidate_explain`、`product_explain` | `KNOWLEDGE_OPTIONAL` | 知识不足被吞掉（`chunks=[]`）；只要结构化事实足够就正常生成，引用只能是 `product:<id>` / `holding:<id>` | **不报错**；但也**不会**因缺片段给出「证据不足」 |
-
-因此，对 `wealth`/`bondfund`/`cash` 的**解释类任务**（`product_explain`、`candidate_explain`）：
-
-1. **不得**以「缺知识片段所以必然 `422`」为验收标准；
-2. 若实现方要求「必须引用知识片段」，则会得到 `400 VALIDATION_ERROR`（「内容生成必须至少包含一个有效引用」/引用白名单），这属于**实现选择造成的失败态**，不是 fixture 事实；
-3. 正确口径是：**结构化事实已经足够，结果可生成，但引用中不含知识片段**；页面必须如实展示「本次无知识片段引用」，并保留 `execution_mode: "fixture"` 标注；
-4. `candidate_explain` 另有更强的前置：必须有完整 `candidateCalculation` 且与当前候选一致，否则 `422`——这与知识片段无关，不得混为同一失败原因。
-
-**影响页面**：P-03（`pc/product-wealth` 的 `W180`→`wealth`、`WCASH`→`cash`）、P-12（`bondfund`）、P-14（`m/wealth` 的 `cash`/`wealth` 卡）、H-02/H-03（候选与比较）、P-16。
-
-**验收要求**：
-- `wealth`/`bondfund`/`cash` 的**解释类**任务：成功态必须显示「无知识片段引用（仅结构化事实）」，且不得显示伪造的 `chunk_id`；
-- `wealth`/`bondfund`/`cash` 作为**研究/摘要/写作**的问题源：必须触发 `422` 并显示「证据不足」页面，E2E 需一条用例断言 `error.code === 'INSUFFICIENT_EVIDENCE'`；
-- 本项**不得**通过「给这三个产品补片段」来掩盖——补片段属于 W2 知识加工范围，且需另立 PR。
+**边界（不变）**：
+- 本扩展全部是**固定 fixture 演示数据**，不是真实数据源；真实业务数据验收仍为 **0 / 30**，F（真实数据源 / W2）本次不启动。
+- 所有页面继续保留「演示桩 fixture / 演示数据，不构成投资建议」标注；不得把受控响应或 fixture 片段写成真实客户数据、真实研报结论或生产验收结论。
+- 页面未由服务端返回的扩展字段（净值序列、规模、持仓与行业分布、基金经理等）仍如实列为「未提供」，不以演示数值补齐。
+- `product_explain` / `candidate_explain` 等解释类任务仍只使用已生成的候选与产品事实；`AI_MODE=fixture` 下模型名恒为 `fixture-generate-1`，响应带 `execution_mode: "fixture"`。
 
 ### 5.2 12 个已退出运行前端的路由：能力整体延后，不属于 W1 并行研发范围
 
