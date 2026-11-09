@@ -19,6 +19,8 @@ W1 使用真实 PostgreSQL 与 pgvector 扩展，数据集是固定 fixture，AI
 
 本地验证（2026-11-04，真实 PostgreSQL 16.1 + 本机编译的 pgvector 0.8.0 + Chromium 1248）：`node --check` 全量 0 错误；`npm test` 83 项（73 通过、10 项 DB 集成本地跳过、0 失败，且在 `AI_MODE=fixture` 环境污染模拟下仍 73/0）；`W1_DB_SMOKE=true npm run test:integration` **10/10 通过**；`npm run test:e2e` **15/15 通过**（含 C 类真状态、刷新恢复与兜底失败态）。本机 Docker 引擎 API 返回 500 不可用，验证改由本机 PostgreSQL 承载，步骤见 `docs/operations.md`。**GitHub Actions 已实跑（2026-11-05）**：PR #1 两轮 CI，第二轮 run `42049768111` 的 6 个 job 与 `ci-merge-gate` 全绿；PR 已合并，`origin/main` = `5022fbe`。详见 `docs/pr-merge-gate-ci.md` §9。
 
+**现行复验（2026-11-09，PR #46 / `d4a9d11`）：**`npm test` 157 项（146 通过 / 11 跳过 / 0 失败）；`W1_DB_SMOKE=true npm run test:integration` **10/10 通过**；`npm run test:e2e` **165 项全绿**（`ci-e2e-smoke` 实跑 2m15s）。上述 2026-11-04 / 2026-11-05 段落中的 83 项、15/15 等数字为对应日期的历史记录，不代表现行规模；现行基线以 `origin/main` 的 HEAD 为准。
+
 > **历史重写说明（2026-11-05）**：为移除随初始提交带入的三份内部文档，仓库历史已压成**单一初始 commit**。上文及本文件中出现的 `d5fd39e`、`c0142fa`、`78ebbfa`、`beaf08a`、`e3aff11`、`5022fbe`、`25e8713`、PR #1、两轮 Actions run 编号等，均为**旧历史中的事实记录**，对应 commit / PR / tag / run 在当前仓库已不存在。当前一律以 `origin/main` 的 HEAD 为唯一基线，AO Worker 必须从它创建 worktree；`w1-baseline-2026-11-05` / `w1-baseline-2026-11-04` 两个 tag 均已删除，仅作历史记录，不得作为分叉依据（旧 tag 的 tree 含过时的分支保护描述）。
 
 正式启动前的 P0 应收敛为以下内容。当前状态逐项标注如下。
@@ -55,11 +57,11 @@ W1 使用真实 PostgreSQL 与 pgvector 扩展，数据集是固定 fixture，AI
    |---|---|---|---|---|---|
    | C 类 14 项（W1 实现） | `task-center`、`source-detail`、`new-supply`、`subscribe`、`brief`、`upload`、`extract`、`templates`、`review-writing`、`workspace`、`research-plan`、`save`、`mobile-search`、`filter-panel` | PC 工作台/投研/阅读/写作/产品页、手机诊断页、任意页筛选图标 | `record_activity` → `state.activities[]`（服务端生成 ID/时间/数据版本） | 成功=`APPLIED` 且结果页显示记录 ID；失败=白名单外/未授权/上限触发 `action-error`；空=结果页显示"尚未写入服务端记录" | `tests/unit/activities.test.js`、`tests/e2e/work-items.spec.js` |
    | D 类 4 项（删除） | `download`、`apply-filter`、`reset-filter`、`select-writing` | 删死代码后已无入口 | 无；spec 与 handler 分支已删除 | 点击落到 `not-implemented` 失败态 | `work-items.spec.js` 未知操作用例 |
-   | A 类 15 项 / B 类 8 项 | 真业务闭环与错误/空状态 | 见各运行路由 | 八个 AI 任务、六个业务命令、`patch` / 校验失败路径 | 既有成功/失败/空状态 | 既有 15 项 E2E |
+   | A 类 15 项 / B 类 8 项 | 真业务闭环与错误/空状态 | 见各运行路由 | 八个 AI 任务、六个业务命令、`patch` / 校验失败路径 | 既有成功/失败/空状态 | 现行 9 个 E2E spec（pc / mobile 双工程约 165 次运行） |
 
    `not-implemented` 结果页明确写"该操作在当前 W1 范围尚未实现，系统没有写入任何状态，也没有展示成功结果"，杜绝兜底伪造成功。
 
-   另需按产品逐个核对知识片段覆盖：fixture 知识库只有 `fund` / `wealthplus` / `insurance` / `deposit` 四个片段，`product_explain`、`candidate_explain` 等带 `product_ids` 的任务在 `wealth` / `bondfund` / `cash` 上会走"证据不足"错误路径。这是 P0 #5 要求的可见空/失败状态，不是流程断裂，但必须写入验收清单。
+   另需按产品逐个核对知识片段覆盖（**2026-11-09 扩展，PR #46**）：fixture 知识库已由 4 条扩展到 **25 个片段 / 12 份知识文档**，覆盖 7 个原有产品 ID、新增产品、`pc/events` / `pc/macro` / `pc/industry` 三类专属片段（元数据带对应关键词）、报告阅读 / 智能写作 / 通用口径片段，以及 `product_id` 为空的通用片段；向量仍为确定性伪向量，由 `scripts/seed/fixtureKnowledge.js` 在 `AI_MODE=fixture` 时注入并激活 ACTIVE，SQL seed 保持 `STAGING` / `pending-real-embedding`。原先 `wealth` / `bondfund` / `cash` 因无专属片段而由数据缺失自然触发的"证据不足"错误路径已不再成立，该失败态现由 `tests/e2e` 的受控契约注入覆盖；三态验收与"不伪造成功结果"的口径不变，仍是 P0 #5 要求的可见空/失败状态，不是流程断裂，必须写入验收清单。详见 `docs/w1-pending-features.md` §5.1。**本扩展全部是固定 fixture 演示数据，不是真实数据源；真实业务数据验收仍为 0/30，F / W2 不启动。**
 
 2. **统一并提交基线** —— ✅ 已落地
 
@@ -101,9 +103,9 @@ W1 使用真实 PostgreSQL 与 pgvector 扩展，数据集是固定 fixture，AI
    `.github/workflows/pr-merge-gate.yml` 已建立：
 
    - `ci-static`：Node 20、`npm ci`、全量语法检查；
-   - `ci-unit-api`：`npm test`（73 项，不依赖数据库/模型）+ Node 原生覆盖率报告 artifact（仅报告、不阻断）；
+   - `ci-unit-api`：`npm test`（现行 157 项：146 通过 / 11 项 DB-gated 跳过 / 0 失败，不依赖数据库/模型）+ Node 原生覆盖率报告 artifact（仅报告、不阻断）；
    - `ci-db-smoke`：pgvector service + `migrate` + 两次 `seed`（幂等）+ `test:integration`（10 项，覆盖 vector(1536)、hnsw、ACTIVE 版本、会话持久化、409、重复提交、撤权清理、pgvector 召回）；
-   - `ci-e2e-smoke`：pgvector service + `migrate`/`seed` + `npx playwright install --with-deps chromium` + `npm run test:e2e`（15 项浏览器用例），失败上传 `playwright-report/` 与 `test-results/`；
+   - `ci-e2e-smoke`：pgvector service + `migrate`/`seed` + `npx playwright install --with-deps chromium` + `npm run test:e2e`（现行 9 个 spec，pc / mobile 双工程约 165 次运行），失败上传 `playwright-report/` 与 `test-results/`；
    - `ci-ownership`：按分支名 `ao/<agent-id>/<topic>` 声明的 Agent 身份，校验 PR 的 changed files 是否在其授权路径内（`scripts/ci/check-ownership.mjs`，默认拒绝未登记路径）；
    - `ci-security`：`npm audit --omit=dev --audit-level=high` + `scripts/ci/check-secrets.mjs` 扫描 tracked 密钥与 `.gitignore` 规则（本地实测 0 漏洞 / 91 文件 0 违规）；
    - `ci-merge-gate`：`if: always()` 汇总六项，作为主分支 required check。
